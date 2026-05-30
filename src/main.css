@@ -1,0 +1,643 @@
+/* ============================================================
+   Love4z — 主样式表
+   ============================================================ */
+
+html,
+body {
+    /* 消除默认边距，撑满视口 */
+    margin: 0;
+    padding: 0;
+    height: 100%;
+
+    /* 字体栈：日文用 FOTMatisProB，中文用微软雅黑，回退仿宋> 系统无衬线 */
+    font-family: "FOTMatisProB", "微软雅黑", "Microsoft YaHei", "仿宋", FangSong, "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    color-scheme: light dark;
+
+    /* 背景：从中心向外的径向渐变，模拟暗室氛围 */
+    background: radial-gradient(circle at center, #1a1a1a, #000);
+    color: #eee;
+
+    /* 隐藏滚动条，页面切换由 JS transform 接管 */
+    overflow: hidden;
+}
+
+/* ===== 引用 WOFF2 字体 ===== */
+@font-face {
+    font-family: 'FOTMatisProB';
+    src: url('./font/FOTMatisProB.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+    /* 仅对日文（假名 + 汉字 + 日文标点）生效 */
+    unicode-range: U+3040-309F, U+30A0-30FF, U+4E00-9FFF, U+3000-303F;
+}
+
+/* ============================================================
+   2. 排版基础
+   ============================================================ */
+
+/* 所有标题继承正文字体，保持风格统一 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: inherit;
+}
+
+/* <em> 用作粉色高亮强调 */
+em {
+    color: #ff9999;
+}
+
+/* 图片统一圆角 */
+img {
+    border-radius: 14px;
+}
+
+
+/* ============================================================
+   3. 页面容器 — 全屏垂直滚动系统
+   原理：一个长容器 #pages，通过 transform: translateY()
+   在11个全屏 .screen 之间切换。transition 提供平滑过渡。
+   ============================================================ */
+
+/* 滚动包裹层：JS 控制 translateY 实现翻页 */
+#pages {
+    position: relative;
+    width: 100vw;
+    transform: translateY(0);
+    /* cubic-bezier(.25, .8, .25, 1) 为 Material Design 标准缓出曲线 */
+    transition: transform 0.75s cubic-bezier(0.25, 0.8, 0.25, 1);
+    /* will-change 提示浏览器提前将 transform 提升到合成层 */
+    will-change: transform;
+}
+
+/* 每一“页” = 一个全屏 flex 居中容器 */
+.screen {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+
+/* ============================================================
+   4. 页面内容排版
+   ============================================================ */
+
+.page-content {
+    text-align: center;
+    max-width: 100vw;
+    padding: 2rem;
+    line-height: 1.8;
+}
+
+/* 大标题：霓虹闪烁 + 红色发光 */
+.page-content h1 {
+    font-size: 3.2rem;
+    margin-bottom: 0.3em;
+    color: #eee;
+    /* flicker 动画模拟霓虹灯管不规则闪灭 */
+    animation: flicker 2s infinite;
+    /* 双层 text-shadow 模拟霓虹光晕：内层亮红 + 外层暗红扩散 */
+    text-shadow:
+        0 0 10px #ff3333,
+        0 0 20px #ff0000;
+}
+
+.page-content h2 {
+    font-size: 2.3rem;
+}
+
+.page-content p {
+    font-size: 1.2rem;
+    margin: 0.6rem 0;
+}
+
+
+/* ============================================================
+   5. 动画 — 关键帧定义
+   按功能分组：闪烁 / 心跳 / 轨道旋转 / 网格漂移 / CRT
+   ============================================================ */
+
+/* --- 5a. 霓虹闪烁 (flicker) ---
+   机理：在特定百分比瞬间降低 opacity，模拟灯管短暂熄灭。
+   选择不规则的关键帧位置（20%, 24%, 55%）以增加真实感。 */
+@keyframes flicker {
+
+    0%,
+    19%,
+    21%,
+    23%,
+    25%,
+    54%,
+    56%,
+    100% {
+        opacity: 1;
+    }
+
+    20%,
+    24%,
+    55% {
+        opacity: 0.3;
+    }
+}
+
+/* --- 5b. 心跳缩放 (heartbeat) ---
+   cubic-bezier(0.68, -0.55, 0.27, 1.55) 产生"弹跳"效果：
+   快速放大 → 回弹 → 二次放大 → 回弹，模拟心跳节奏 */
+@keyframes heartbeat {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    15% {
+        transform: scale(1.1);
+    }
+
+    30% {
+        transform: scale(1);
+    }
+
+    45% {
+        transform: scale(1.1);
+    }
+
+    60% {
+        transform: scale(1);
+    }
+}
+
+/* --- 5c. 双轨环字 (orbit-a / orbit-b) ---
+   利用 CSS transform 链条实现圆形轨道：
+   rotate(θ) translateX(R) rotate(-θ) → 元素在半径R的圆上运行
+   orbit-b 使用 reverse 反向旋转 + 不同的半径和速度，形成双轨交错 */
+@keyframes orbit-a {
+    0% {
+        transform: translate(0, 0) rotate(0deg) translateX(320px) rotate(0deg);
+    }
+
+    100% {
+        transform: translate(0, 0) rotate(360deg) translateX(320px) rotate(-360deg);
+    }
+}
+
+@keyframes orbit-b {
+    0% {
+        transform: rotate(0deg) translateX(380px) rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(-360deg) translateX(380px) rotate(360deg);
+    }
+}
+
+/* --- 5d. 背景网格漂移 (drift) ---
+   40px 方格背景连续平移，营造"数字空间"纵深移动感 */
+@keyframes drift {
+    from {
+        transform: translate(0, 0);
+    }
+
+    to {
+        transform: translate(40px, 40px);
+    }
+}
+
+/* --- 5e. CRT 偶发闪烁 (crt-flicker) ---
+   99.5%-99.8% 瞬间降低 opacity 至 0.85，
+   模拟老式 CRT 显示器的随机亮度波动 */
+@keyframes crt-flicker {
+
+    0%,
+    99.4%,
+    100% {
+        opacity: 1;
+    }
+
+    99.5%,
+    99.8% {
+        opacity: 0.85;
+    }
+}
+
+/* --- 5f. 噪点抖动 (noiseMove) ---
+   1-2px 的随机位移，让噪点纹理"活着" */
+@keyframes noiseMove {
+    0% {
+        transform: translate(0, 0);
+    }
+
+    50% {
+        transform: translate(1px, -1px);
+    }
+
+    100% {
+        transform: translate(-1px, 1px);
+    }
+}
+
+/* --- 5g. Matrix 雨滴下落 (fall) ---
+   从顶部(-20px)落到视口外(110vh) */
+@keyframes fall {
+    to {
+        transform: translateY(110vh);
+    }
+}
+
+/* --- 5h. 滚动指示器呼吸 (pulse) --- */
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 0.7;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+}
+
+/* --- 5i. 翻页弹性动画 (rubberBand) ---
+   来自 Animate.css 的经典橡皮筋效果：
+   横向拉伸→纵向拉伸→微调→回正，模拟物理弹性 */
+@keyframes rubberBand {
+    from {
+        transform: scale3d(1, 1, 1);
+    }
+
+    30% {
+        transform: scale3d(1.25, 0.75, 1);
+    }
+
+    40% {
+        transform: scale3d(0.75, 1.25, 1);
+    }
+
+    50% {
+        transform: scale3d(1.15, 0.85, 1);
+    }
+
+    65% {
+        transform: scale3d(0.95, 1.05, 1);
+    }
+
+    75% {
+        transform: scale3d(1.05, 0.95, 1);
+    }
+
+    to {
+        transform: scale3d(1, 1, 1);
+    }
+}
+
+/* 翻页时由 JS 动态添加到当前 .screen 上 */
+.screen.rubberBand {
+    animation: rubberBand 1s ease-in-out;
+}
+
+
+/* ============================================================
+   6. 视觉特效层（从底层到顶层排列）
+   所有特效均 pointer-events: none，不干扰交互
+   ============================================================ */
+
+/* --- 6a. 背景网格 ---
+   两层 linear-gradient 交叉形成 40×40 方格矩阵 */
+.grid {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image:
+        linear-gradient(#222 2px, transparent 2px),
+        linear-gradient(90deg, #222 2px, transparent 2px);
+    background-size: 40px 40px;
+    animation: drift 15s linear infinite;
+    opacity: 0.15;
+    pointer-events: none;
+}
+
+/* --- 6b. Matrix 数字雨 ---
+   每个 <span> 由 JS 动态生成，随机水平位置 + 大小 + 速度 */
+.rain span {
+    position: absolute;
+    top: -20px;
+    color: #0f0;
+    opacity: 0.8;
+    font-family: monospace;
+    animation: fall linear infinite;
+    white-space: pre;
+}
+
+/* --- 6c. 噪点纹理层 ---
+   使用极小 base64 PNG 平铺，配合 noiseMove 抖动 */
+#noise {
+    position: fixed;
+    inset: 0;
+    opacity: 0.1;
+    pointer-events: none;
+    animation: noiseMove 0.2s infinite;
+    /* 1×1 像素半透明 PNG → 浏览器拉伸为全屏噪点纹理 */
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAABlBMVEUAAP8AAABa4Jr2AAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=');
+}
+
+/* --- 6d. CRT 扫描线（body::before）---
+   repeating-linear-gradient 每 3px 加一条暗线，模拟隔行扫描 */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    pointer-events: none;
+    background: repeating-linear-gradient(transparent,
+            transparent 2px,
+            rgba(0, 0, 0, 0.06) 3px);
+}
+
+/* --- 6e. CRT 微模糊 + 闪烁（body::after）---
+   backdrop-filter blur 模拟荧光屏余晖，crt-flicker 模拟闪烁 */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 98;
+    pointer-events: none;
+    backdrop-filter: blur(0.6px);
+    animation: crt-flicker 5s infinite;
+}
+
+
+/* ============================================================
+   7. 特殊页面样式
+   ============================================================ */
+
+/* --- 7a. S2 爱情宣言页 — 双轨环字 + 心跳 --- */
+
+/* 为 ::before / ::after 伪元素提供定位参考 */
+.screen-love .page-content {
+    position: relative;
+}
+
+/* 心跳标题：四层 text-shadow 叠加产生炽热发光，配合 heartbeat 缩放 */
+.screen-love h1 {
+    text-shadow:
+        0 0 10px hsl(345, 85%, 62%),
+        0 0 30px hsl(345, 85%, 62%),
+        0 0 60px hsl(355, 75%, 50%),
+        0 0 80px hsl(355, 75%, 50%);
+    animation: heartbeat 1.2s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+}
+
+/* 外轨（大半径 320px）："郑舒桐是我老婆" 循环 */
+.screen-love::before {
+    content: "❤ 郑舒桐 ❤ 是我老婆 ❤ 郑舒桐 ❤ 是我老婆 ❤";
+    position: absolute;
+    white-space: nowrap;
+    font-size: 1.1rem;
+    letter-spacing: 0.35em;
+    color: hsl(355, 75%, 50%);
+    opacity: 0.35;
+    pointer-events: none;
+    animation: orbit-a 14s linear infinite;
+}
+
+/* 内轨（大半径 380px，反向）："三三水最可爱" 循环 */
+.screen-love::after {
+    content: "❤ 三三水 ❤ 最可爱 ❤ 三三水 ❤ 最可爱 ❤";
+    position: absolute;
+    white-space: nowrap;
+    font-size: 0.9rem;
+    letter-spacing: 0.25em;
+    color: hsl(345, 85%, 62%);
+    opacity: 0.25;
+    pointer-events: none;
+    animation: orbit-b 11s linear infinite reverse;
+}
+
+
+/* --- 7b. S5 爱好页 — 词云轨道系统 ---
+   每个 <span> 以不同半径 (--r) 和速度 (--speed) 在环形轨道上运行。
+   距离圆心越远 (--orbit 越大) 的文字越模糊 + 越透明，形成景深感。
+   hover 时暂停动画 + 极光色高亮，模拟"选中"交互。 */
+
+.word-cloud {
+    position: relative;
+    width: 100%;
+    height: 280px;
+    margin: 1.5rem auto;
+    display: grid;
+    place-items: center;
+}
+
+.word-cloud span {
+    position: absolute;
+    /* 注意：以下 CSS 变量 (--font-display, --color-moon 等) 需要在
+       :root 或 .word-cloud 上提前定义，否则将回退到浏览器默认值 */
+    font-family: var(--font-display);
+    font-size: clamp(0.9rem, 1.6vw, 1.3rem);
+    color: var(--color-moon);
+    white-space: nowrap;
+
+    /* 轨道动画：--r 控制半径，--speed 控制周期，--orbit 控制先后 */
+    animation: orbit-word var(--speed, 15s) linear infinite;
+    animation-delay: calc(var(--orbit, 0) * -1.8s);
+
+    /* 远景虚化：轨道编号越大，越模糊、越透明 */
+    filter: blur(calc(var(--orbit, 0) * 0.08px));
+    opacity: calc(0.95 - var(--orbit, 0) * 0.025);
+
+    transition: color var(--dur-fast), text-shadow var(--dur-fast);
+}
+
+.word-cloud span:hover {
+    color: var(--color-aurora-2);
+    text-shadow: 0 0 20px var(--color-aurora-2);
+    animation-play-state: paused;
+    z-index: 10;
+}
+
+/* 词云轨道关键帧：与 orbit-a/orbit-b 原理相同，但参数由 CSS 变量动态控制 */
+@keyframes orbit-word {
+    0% {
+        transform: translate(-50%, -50%) rotate(0deg) translateX(var(--r, 150px)) rotate(0deg);
+    }
+
+    100% {
+        transform: translate(-50%, -50%) rotate(360deg) translateX(var(--r, 150px)) rotate(-360deg);
+    }
+}
+
+
+/* ============================================================
+   8. UI 交互元素
+   ============================================================ */
+
+/* --- 8a. Ghost 幽灵错误提示 ---
+   随机位置、随机文本的系统错误风格消息。
+   JS 控制 top/left 位置和文本切换，CSS transition 实现淡入淡出。 */
+#ghost {
+    position: relative;
+    font-family: monospace;
+    color: #ff4444;
+    font-size: 2.2rem;
+    text-shadow: 0 0 8px #ff0000;
+    pointer-events: none;
+    /* JS 通过设置 opacity: 0/1 触发此过渡 */
+    transition: opacity 0.5s;
+    z-index: 0;
+}
+
+/* --- 8b. 滚动指示器 ---
+   固定在右下角的绿色提示文字，"SCROLL UP" / "SCROLL DOWN" */
+#scroll-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 1rem;
+    animation: pulse 2s infinite;
+    opacity: 0.7;
+    text-shadow: 0 0 5px #0f0;
+}
+
+
+/* ============================================================
+   9. 响应式警告遮罩
+   当视口宽度 < 800px 时全屏覆盖，提示用户使用更大屏幕
+   ============================================================ */
+
+#responsive-warning {
+    /* 默认隐藏，仅在小屏时由 @media 激活 */
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    z-index: 99999;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+/* 警告内容居中区块 */
+#responsive-warning .warning-content {
+    text-align: center;
+    padding: 2rem;
+    /* flicker: 文字闪烁营造紧张感; rubberBand: 入场弹性动画 */
+    animation:
+        flicker 2s infinite,
+        rubberBand 1s ease-in-out;
+}
+
+#responsive-warning .warning-content h1 {
+    font-size: 4rem;
+    margin-bottom: 0.5rem;
+    text-shadow:
+        0 0 20px #ff3333,
+        0 0 40px #ff0000;
+}
+
+#responsive-warning .warning-content h2 {
+    font-size: 2rem;
+    color: #ff4444;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 10px #ff0000;
+}
+
+#responsive-warning .warning-content p {
+    font-size: 1.2rem;
+    color: #ccc;
+    margin: 0.5rem 0;
+}
+
+#responsive-warning .warning-hint {
+    font-size: 0.9rem;
+    color: #888;
+    margin-top: 1.5rem;
+}
+
+/* 触发断点：视口宽度不足 800px 时显示警告 */
+@media (max-width: 799px) {
+    #responsive-warning {
+        display: flex;
+    }
+}
+
+/* ============================================================
+   10. 打字机效果
+   ============================================================ */
+.typerr {
+    --typerr-accent: #d4a56a;
+    /* 乱码和光标颜色 */
+    display: inline-block;
+    opacity: 1;
+    transition: opacity 0.15s ease;
+}
+
+/* 保证动画期间字符可以重叠定位 */
+.typerr .char-wrap {
+    position: relative;
+    display: inline-block;
+    letter-spacing: 1px;
+}
+
+/* 最终真实文本：初始隐藏，闪烁后显现 */
+.typerr .char-wrap .final {
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.typerr .char-wrap .final.revealed {
+    opacity: 1;
+}
+
+/* 乱码文本 */
+.typerr .char-wrap .scramble {
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--typerr-accent);
+    opacity: 0.75;
+}
+
+@keyframes typerr-blink {
+
+    0%,
+    49% {
+        opacity: 1;
+    }
+
+    50%,
+    100% {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .typerr .char-wrap .scramble {
+        display: none !important;
+    }
+
+    .typerr .char-wrap .final {
+        opacity: 1 !important;
+        transition: none !important;
+    }
+
+    .typerr {
+        transition: none !important;
+    }
+}
+
+/* ==================== TYPERR EFFECT END ==================== */
