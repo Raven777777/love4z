@@ -1,3 +1,5 @@
+document.documentElement.classList.add("js");
+
 /* ============================================================
    Love4z — 主脚本
    四大模块：
@@ -5,7 +7,7 @@
      1. Matrix 数字雨生成器
      2. Ghost 幽灵错误消息
      3. 全屏翻页系统（滚轮 / 触摸 / 键盘）
-     4. 打字机效果（（
+     4. 打字机效果
    ============================================================ */
 
 /* ============================================================
@@ -16,10 +18,13 @@
 (function () {
     "use strict";
 
+    // 调试面板仅通过 URL ?debug=1 开启，避免生产环境持续占用一条动画帧循环。
+    if (new URLSearchParams(window.location.search).get("debug") !== "1") return;
+
     /* ---- 配置 ---- */
     var FPS_MONITOR = {
         updateInterval: 500,    // FPS 数值刷新间隔，避免数字闪烁太快
-        warnThreshold: 5        // 低于目标帧率该数值时，数字变红警告
+        warnThreshold: 30       // 低于该帧率时数字变红警告
     };
 
     /* ---- 创建 DOM ---- */
@@ -30,45 +35,36 @@
         "left: 10px;" +
         "padding: 4px 8px;" +
         "background: rgba(0, 0, 0, 0.6);" +
-        "color: #0f0;" +              // 默认绿色，表示流畅
+        "color: #0f0;" +
         "font: bold 14px monospace;" +
         "z-index: 99999;" +
-        "pointer-events: none;" +      // 穿透点击，不影响页面交互
+        "pointer-events: none;" +
         "border-radius: 4px;";
 
     document.documentElement.appendChild(monitor);
 
     /* ---- 核心统计逻辑 ---- */
-    var frameCount = 0;               // 帧计数器
-    var lastTime = performance.now(); // 上次统计的时间戳
-    var currentFps = 0;               // 当前计算出的 FPS 值
+    var frameCount = 0;
+    var lastTime = performance.now();
+    var currentFps = 0;
 
     function tick(now) {
         frameCount++;
 
-        // 时间差验证：是否达到刷新间隔
         var elapsed = now - lastTime;
         if (elapsed >= FPS_MONITOR.updateInterval) {
-            // 核心公式：帧数 / 经过时间(秒) = 帧率
-            // 乘以 1000 是将毫秒转换为秒
             currentFps = Math.round((frameCount * 1000) / elapsed);
 
             frameCount = 0;
             lastTime = now;
 
-            // 更新显示
             monitor.textContent = currentFps + " FPS";
-
-            // 性能警告验证：如果帧率严重低于预期（掉帧严重），变红提示
             monitor.style.color = currentFps < FPS_MONITOR.warnThreshold ? "#f00" : "#0f0";
         }
 
-        // 使用原生的 requestAnimationFrame 保证统计精度
-        // 如果使用被重写的 rAF，统计出来的 FPS 永远等于限制后的帧率，无法反映底层真实情况
         window.requestAnimationFrame(tick);
     }
 
-    // 启动检测循环
     window.requestAnimationFrame(tick);
 
 })();
@@ -85,13 +81,16 @@
     /* ---- 1a. 配置 ---- */
     var RAIN = {
         container: document.getElementById("rain"),
-        chars: "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ013456789",           // 雨滴字符集（半宽数字，易读）
-        count: 100,                   // 同时存在的雨滴数量
-        sizeMin: 20,                  // 字号下限
-        sizeMax: 40,                  // 字号上限
-        durMin: 2,                    // 下落动画最短时长
-        durMax: 5                     // 下落动画最长时长
+        chars: "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ013456789",
+        count: 100,
+        sizeMin: 20,
+        sizeMax: 40,
+        durMin: 2,
+        durMax: 5
     };
+
+    // 与 CSS 移动端降级一致：窄屏不生成雨滴 DOM，避免无效节点开销。
+    if (!RAIN.container || window.matchMedia("(max-width: 799px)").matches) return;
 
     /**
      * 范围随机数生成
@@ -104,20 +103,13 @@
     }
 
     /* ---- 1b. 批量构建 DOM ---- */
-
-    // 使用 DocumentFragment 做离屏构建，一次性 append 到 DOM
-    // 优势：规避逐个 appendChild 触发的多次回流
     var fragment = document.createDocumentFragment();
 
     for (var i = 0; i < RAIN.count; i++) {
         var span = document.createElement("span");
 
-        // | 0 是 JavaScript 中最快的整数截断方式（等价于 Math.floor）
-        // 对正数有效；这里 rand 始终返回正数，安全使用
         span.textContent = RAIN.chars[rand(0, RAIN.chars.length) | 0];
 
-        // 单次 cssText 赋值优于逐属性 style.left / style.fontSize 赋值
-        // 每次 .style.xxx = 都会触发样式重算，合并写入只需一次
         span.style.cssText =
             "left: " + rand(0, 100) + "vw;" +
             "font-size: " + rand(RAIN.sizeMin, RAIN.sizeMax) + "px;" +
@@ -126,7 +118,6 @@
         fragment.appendChild(span);
     }
 
-    // 一次性挂载所有雨滴到 DOM
     RAIN.container.appendChild(fragment);
 
 })();
@@ -144,7 +135,6 @@
     var GHOST = {
         el: document.getElementById("ghost"),
 
-        // 错误消息池：仿系统崩溃 / 维度异常 / 意识溢出 等伪错误码
         msgs: [
             "#ERR?13: DIMENSION SHIFT DETECTED",
             "#FATAL?993: GATEWAY BREACHED",
@@ -158,18 +148,16 @@
             "#XPN?0x0: CONSCIOUSNESS OVERFLOW"
         ],
 
-        interval: 5000,       // 每条消息驻留总时长
-        fadeBefore: 4500,     // 提前多少 ms 开始淡出（需 CSS transition: opacity 0.5s 配合）
-        posMin: 10,           // 定位下限 (%) — 避免文字贴边
-        posMax: 90            // 定位上限 (%)
+        interval: 5000,
+        fadeDelay: 4500,
+        posMin: 10,
+        posMax: 90
     };
 
-    /**
-     * 状态锁：记录上一条消息的索引
-     * 用于防止相邻两次刷新选中同一条消息，避免"视觉静止"错觉
-     * 初始值 -1 确保首次随机时 do-while 至少执行一次
-     */
+    if (!GHOST.el || GHOST.msgs.length === 0) return;
+
     var lastIndex = -1;
+    var fadeTimer = 0;
 
     /* ---- 2b. 刷新消息 ---- */
     function updateGhost() {
@@ -177,43 +165,42 @@
         var msgs = GHOST.msgs;
         var newIndex;
 
-        /* 索引去重验证：
-         * do-while 保证新索引与上一次不同。
-         * 当 msgs.length === 1 时会死循环，但消息池有 10 条，安全。 */
-        do {
-            newIndex = (Math.random() * msgs.length) | 0;
-        } while (newIndex === lastIndex);
+        if (msgs.length === 1) {
+            newIndex = 0;
+        } else {
+            do {
+                newIndex = (Math.random() * msgs.length) | 0;
+            } while (newIndex === lastIndex);
+        }
 
         lastIndex = newIndex;
         el.textContent = msgs[newIndex];
 
-        /* 随机定位验证：
-         * posMin ~ posMax 区间确保文字不会超出视口边界。
-         * 使用 cssText 单次写入，合并位置 + 显形两个操作 */
         el.style.cssText =
             "top: " + (GHOST.posMin + Math.random() * (GHOST.posMax - GHOST.posMin)) + "%;" +
             "left: " + (GHOST.posMin + Math.random() * (GHOST.posMax - GHOST.posMin)) + "%;" +
             "opacity: 1";
 
-        /* 定时淡出：
-         * 在下一个周期到来前 GHOST.fadeBefore 毫秒开始淡出。
-         * CSS 中 transition: opacity 0.5s 确保平滑过渡。
-         * 计算公式：interval - fadeBefore = 5000 - 500 = 4500ms 后触发淡出 */
-        setTimeout(function () {
+        if (fadeTimer) clearTimeout(fadeTimer);
+        fadeTimer = setTimeout(function () {
+            fadeTimer = 0;
             el.style.opacity = "0";
-        }, GHOST.interval - GHOST.fadeBefore);
+        }, GHOST.fadeDelay);
     }
 
-    // 立即显示第一条消息，之后定时更新
     updateGhost();
-    setInterval(updateGhost, GHOST.interval);
+    var ghostInterval = setInterval(updateGhost, GHOST.interval);
+    window.addEventListener("pagehide", function () {
+        clearInterval(ghostInterval);
+        if (fadeTimer) clearTimeout(fadeTimer);
+    }, { once: true });
 
 })();
 
 
 /* ============================================================
    模块 3 — 全屏翻页系统
-   将11个 .screen 作为独立"页"，通过 transform: translateY()
+   将 .screen 作为独立"页"，通过 transform: translateY()
    在页面间平滑切换。支持三种输入方式：
      - 鼠标滚轮
      - 触摸滑动（touchstart / touchend）
@@ -224,36 +211,26 @@
     "use strict";
 
     /* ---- 3a. 状态 & 引用 ---- */
-    var page = 0;                                    // 当前页索引 (0-based)
-    var pages = document.getElementsByClassName("screen");  // 实时 HTMLCollection
-    var wrapper = document.getElementById("pages");  // 滚动包裹层
-    var total = pages.length;                        // 总页数
+    var page = 0;
+    var pages = document.getElementsByClassName("screen");
+    var wrapper = document.getElementById("pages");
+    var total = pages.length;
 
-    var lastScrollTime = 0;    // 上次翻页时间戳，用于节流
-    var SCROLL_DELAY = 800;    // 翻页冷却时间 — 800ms 匹配 CSS transition 0.75s
+    if (!wrapper || total === 0) return;
 
     /* ---- 3b. 动画工具函数 ---- */
 
     /**
      * 在指定元素上触发 rubberBand 弹性动画
-     *
-     * 实现原理：
-     * 1. 先移除 rubberBand 类（确保可以重新触发）
-     * 2. 强制重排：读取 offsetWidth 迫使浏览器
-     *    将"移除类"的变更同步到渲染树，这样再添加类时动画会从头播放
-     * 3. 添加 rubberBand 类 → CSS @keyframes rubberBand 执行
-     * 4. animationend 事件中清理类，防止污染后续状态
-     *
-     * @param {Element} el 目标 .screen 元素
+     * @param {Element|null|undefined} el 目标 .screen 元素
      */
     function playRubberBand(el) {
+        if (!el) return;
+
         el.classList.remove("rubberBand");
-        // 强制回流：读取 offsetWidth 触发同步布局计算
-        // 这是 CSS 动画重放的经典技巧，无副作用
         void el.offsetWidth;
         el.classList.add("rubberBand");
 
-        // 动画结束后自动清理
         el.addEventListener("animationend", function handler() {
             el.classList.remove("rubberBand");
             el.removeEventListener("animationend", handler);
@@ -264,79 +241,67 @@
 
     /**
      * 切换到第 n 页
-     *
-     * 验证逻辑：
-     * - Math.max(0, ...) 防止索引 < 0（向上溢出）
-     * - Math.min(total - 1, ...) 防止索引 >= total（向下溢出）
-     * - 仅当目标页与当前页不同时才执行动画（避免重复翻页）
-     *
      * @param {number} n 目标页索引
      */
     function goPage(n) {
-        // 边界钳位验证：确保 target 在 [0, total-1] 范围内
-        var target = Math.max(0, Math.min(total - 1, n));
+        var target = Math.max(0, Math.min(total - 1, n | 0));
+        var screen = pages[target];
+        if (!screen) return;
 
         if (target !== page) {
             page = target;
-            // translateY(-100vh * page)：每页上移一个视口高度
-            wrapper.style.transform = "translateY(-" + (page * 100) + "vh)";
-            playRubberBand(pages[page]);
+            // 与 CSS 的 --page-height 保持一致，避免移动端地址栏变化造成错位。
+            wrapper.style.transform = "translateY(calc(-" + page + " * var(--page-height)))";
+            playRubberBand(screen);
         }
+
+        // 通知打字机等模块：当前屏进入可视（transform 翻页下 IO 不一定可靠）
+        window.dispatchEvent(new CustomEvent("love4z:pagechange", {
+            detail: { page: page, screen: screen }
+        }));
+    }
+
+    function requestPage(delta) {
+        goPage(page + delta);
     }
 
     /* ---- 3d. 输入事件绑定 ---- */
 
-    // 鼠标滚轮
-    // deltaY > 0 表示向下滚动 → 下一页；< 0 向上 → 上一页
     window.addEventListener("wheel", function (e) {
-        var now = Date.now();
-        // 节流验证：冷却时间内忽略所有滚轮事件
-        if (now - lastScrollTime < SCROLL_DELAY) return;
-        lastScrollTime = now;
+        requestPage(e.deltaY > 0 ? 1 : -1);
+    }, { passive: true });
 
-        goPage(page + (e.deltaY > 0 ? 1 : -1));
-    });
-
-    // 触摸滑动
     var touchStartY = 0;
 
     window.addEventListener("touchstart", function (e) {
-        touchStartY = e.touches[0].clientY;
-    });
+        var t = e.touches && e.touches[0];
+        if (!t) return;
+        touchStartY = t.clientY;
+    }, { passive: true });
 
     window.addEventListener("touchend", function (e) {
-        var deltaY = e.changedTouches[0].clientY - touchStartY;
-        var now = Date.now();
+        var t = e.changedTouches && e.changedTouches[0];
+        if (!t) return;
 
-        /* 两重验证：
-         * 1. 滑动距离 < 50px → 视为误触，忽略
-         * 2. 冷却时间内 → 节流忽略 */
-        if (Math.abs(deltaY) < 50 || now - lastScrollTime < SCROLL_DELAY) return;
-        lastScrollTime = now;
+        var deltaY = t.clientY - touchStartY;
+        if (Math.abs(deltaY) < 50) return;
 
-        // deltaY < 0 表示手指上滑 → 下一页
-        goPage(page + (deltaY < 0 ? 1 : -1));
-    });
+        requestPage(deltaY < 0 ? 1 : -1);
+    }, { passive: true });
 
-    // 键盘控制
     window.addEventListener("keydown", function (e) {
-        // 向下翻页键：ArrowDown / PageDown / Space
         if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === " ") {
-            e.preventDefault();  // 阻止 Space 触发默认滚动
-            goPage(page + 1);
-        }
-        // 向上翻页键：ArrowUp / PageUp
-        if (e.key === "ArrowUp" || e.key === "PageUp") {
             e.preventDefault();
-            goPage(page - 1);
+            requestPage(1);
+        } else if (e.key === "ArrowUp" || e.key === "PageUp") {
+            e.preventDefault();
+            requestPage(-1);
         }
     });
 
-    // 页面加载时首屏播放入场动画
     window.addEventListener("load", function () {
-        if (pages[0]) {
-            playRubberBand(pages[0]);
-        }
+        playRubberBand(pages[0]);
+        goPage(0);
     });
 
 })();
@@ -349,7 +314,6 @@
 (function () {
     const SCRAMBLE_CHARS = ' █▓▒░╫╪╗╝╚╔║═╬▀■□◇◆▽⊿⟐⟡⧫⬡⬢⏣'.split('');
 
-    // CSS 类名常量，方便维护
     const CLS = {
         WRAP: 'char-wrap',
         FINAL: 'final',
@@ -363,7 +327,6 @@
         RANDOM: 'data-random'
     };
 
-    // 1. 解析词条并生成乱码所需的 DOM 结构
     function prepareTemplate(phraseText) {
         const tempContainer = document.createElement('div');
         tempContainer.innerHTML = phraseText;
@@ -374,7 +337,6 @@
         return { html: tempContainer.innerHTML, totalChars: globalIndexRef.count };
     }
 
-    // 递归处理文本节点
     function processNodes(node, globalIndexRef) {
         const childNodes = Array.from(node.childNodes);
         childNodes.forEach(child => {
@@ -385,7 +347,6 @@
 
                 for (let i = 0; i < text.length; i++) {
                     const ch = text[i];
-                    // 空白字符直接作为文本节点添加，不包裹 span，减少 DOM 数量并保留原生换行行为
                     if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t') {
                         fragment.appendChild(document.createTextNode(ch));
                         continue;
@@ -416,34 +377,44 @@
         });
     }
 
-    // 2. 打字机切入动画
-    function typeIn(container, totalChars) {
+    function typeIn(container, totalChars, state) {
         return new Promise(resolve => {
             if (totalChars === 0) { resolve(); return; }
 
             const promises = [];
-            // 一次性缓存节点
-            const finalEls = Array.from(container.querySelectorAll(`.${CLS.FINAL}`));
-            const scrambleEls = Array.from(container.querySelectorAll(`.${CLS.SCRAMBLE}`));
+            const finalEls = [];
+            const scrambleEls = [];
+            container.querySelectorAll(`.${CLS.FINAL}`).forEach(el => {
+                finalEls[Number(el.getAttribute(ATTR.IDX))] = el;
+            });
+            container.querySelectorAll(`.${CLS.SCRAMBLE}`).forEach(el => {
+                scrambleEls[Number(el.getAttribute(ATTR.IDX))] = el;
+            });
+
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                finalEls.forEach(el => el && el.classList.add(CLS.REVEALED));
+                scrambleEls.forEach(el => el && (el.style.display = 'none'));
+                resolve();
+                return;
+            }
 
             for (let i = 0; i < totalChars; i++) {
                 promises.push(new Promise(res => {
-                    const finalEl = finalEls.find(el => el.getAttribute(ATTR.IDX) == i);
-                    const scrambleEl = scrambleEls.find(el => el.getAttribute(ATTR.IDX) == i);
+                    const finalEl = finalEls[i];
+                    const scrambleEl = scrambleEls[i];
 
-                    // 如果找不到元素（理论上不应该发生），直接 resolve
                     if (!finalEl || !scrambleEl) { res(); return; }
 
                     const startDelay = Math.random() * 4000;
                     const scrambleCount = 2 + Math.floor(Math.random() * 8);
                     const scrambleInterval = 40 + Math.random() * 40;
 
-                    setTimeout(() => {
+                    state.setTimeout(() => {
                         let step = 0;
-                        const timer = setInterval(() => {
+                        const timer = state.setInterval(() => {
                             step++;
                             if (step >= scrambleCount) {
-                                clearInterval(timer);
+                                state.clearInterval(timer);
                                 scrambleEl.style.display = 'none';
                                 finalEl.classList.add(CLS.REVEALED);
                                 res();
@@ -458,32 +429,45 @@
         });
     }
 
-    // 3. 乱码消散动画
-    function glitchOut(container) {
+    function glitchOut(container, state) {
         return new Promise(resolve => {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                container.style.opacity = '0';
+                resolve();
+                return;
+            }
+
             const charWraps = Array.from(container.querySelectorAll(`.${CLS.WRAP}`));
 
             if (charWraps.length === 0) {
                 container.style.opacity = '0';
-                setTimeout(resolve, 200);
+                state.setTimeout(resolve, 200);
                 return;
             }
 
-            const timelines = charWraps.map((wrap) => ({ el: wrap, startAt: Math.random() * 1000 })); // 持续时间
+            const timelines = charWraps.map(wrap => ({
+                finalEl: wrap.querySelector(`.${CLS.FINAL}`),
+                scrambleEl: wrap.querySelector(`.${CLS.SCRAMBLE}`),
+                startAt: Math.random() * 1000
+            }));
             const startTime = performance.now();
             const charDuration = 250;
 
             function tick(now) {
+                if (state.disposed) {
+                    resolve();
+                    return;
+                }
+
                 const elapsed = now - startTime;
                 let allDone = true;
 
-                timelines.forEach(({ el, startAt }) => {
+                for (let i = 0; i < timelines.length; i++) {
+                    const { finalEl, scrambleEl, startAt } = timelines[i];
                     const charElapsed = elapsed - startAt;
-                    if (charElapsed < 0) { allDone = false; return; }
+                    if (charElapsed < 0) { allDone = false; continue; }
 
                     const progress = Math.min(charElapsed / charDuration, 1);
-                    const finalEl = el.querySelector(`.${CLS.FINAL}`);
-                    const scrambleEl = el.querySelector(`.${CLS.SCRAMBLE}`);
 
                     if (progress < 1) {
                         allDone = false;
@@ -504,22 +488,21 @@
                         if (finalEl) finalEl.style.opacity = 0;
                         if (scrambleEl) scrambleEl.style.display = 'none';
                     }
-                });
+                }
 
                 if (allDone) {
                     container.style.opacity = '0';
                     resolve();
                 } else {
-                    requestAnimationFrame(tick);
+                    state.requestFrame(tick);
                 }
             }
-            requestAnimationFrame(tick);
+            state.requestFrame(tick);
         });
     }
 
-    // 4. 核心控制器
     function initTyperr(container) {
-        const itemElements = Array.from(container.querySelectorAll('item'));
+        const itemElements = Array.from(container.querySelectorAll('[data-phrase]'));
         let phrases = [];
 
         if (itemElements.length > 0) {
@@ -531,24 +514,23 @@
 
         if (phrases.length === 0) return;
 
-        // 清空容器，准备开始
         container.innerHTML = '';
 
-        // --- 时间解析逻辑优化 (提前处理，避免循环内重复计算) ---
         const rawInterval = container.getAttribute(ATTR.INTERVAL) || '2000 - 7000';
         let minInterval = 4000;
         let maxInterval = 4000;
         let isFixedTime = true;
 
-        if (rawInterval.includes('-') || rawInterval.includes(',')) {
-            const parts = rawInterval.split(/[-,]/); // 兼容中英文逗号和横杠
-            minInterval = parseInt(parts[0]) || 2000;
-            maxInterval = parseInt(parts[1]) || 6000;
+        // 兼容中英文逗号与横杠分隔的区间写法
+        if (/[-–,，]/.test(rawInterval)) {
+            const parts = rawInterval.split(/[-–,，]/);
+            minInterval = Math.max(0, parseInt(parts[0], 10) || 2000);
+            maxInterval = Math.max(minInterval, parseInt(parts[1], 10) || 6000);
             isFixedTime = false;
         } else {
-            const val = parseInt(rawInterval);
+            const val = parseInt(rawInterval, 10);
             if (!isNaN(val)) {
-                minInterval = maxInterval = val;
+                minInterval = maxInterval = Math.max(0, val);
             }
         }
 
@@ -557,6 +539,50 @@
 
         let currentIndex = -1;
         let isTransitioning = false;
+        const state = {
+            disposed: false,
+            timers: new Set(),
+            frames: new Set(),
+            setTimeout(callback, delay) {
+                const id = window.setTimeout(() => {
+                    this.timers.delete(id);
+                    if (!this.disposed) callback();
+                }, delay);
+                this.timers.add(id);
+                return id;
+            },
+            setInterval(callback, delay) {
+                const id = window.setInterval(() => {
+                    if (!this.disposed) callback();
+                }, delay);
+                this.timers.add(id);
+                return id;
+            },
+            clearInterval(id) {
+                window.clearInterval(id);
+                this.timers.delete(id);
+            },
+            requestFrame(callback) {
+                const id = window.requestAnimationFrame(now => {
+                    this.frames.delete(id);
+                    if (!this.disposed) callback(now);
+                });
+                this.frames.add(id);
+                return id;
+            },
+            dispose() {
+                this.disposed = true;
+                this.timers.forEach(id => {
+                    window.clearTimeout(id);
+                    window.clearInterval(id);
+                });
+                this.frames.forEach(id => window.cancelAnimationFrame(id));
+                this.timers.clear();
+                this.frames.clear();
+            }
+        };
+
+        window.addEventListener('pagehide', () => state.dispose(), { once: true });
 
         function getNextIndex() {
             if (phrases.length === 1) return 0;
@@ -564,65 +590,89 @@
                 let idx;
                 do { idx = Math.floor(Math.random() * phrases.length); } while (idx === currentIndex && phrases.length > 1);
                 return idx;
-            } else {
-                return (currentIndex + 1) % phrases.length;
             }
+            return (currentIndex + 1) % phrases.length;
         }
 
         async function showNext() {
-            if (isTransitioning) return;
+            if (state.disposed || isTransitioning) return;
             isTransitioning = true;
 
             currentIndex = getNextIndex();
             const currentTemplate = templates[currentIndex];
 
             container.innerHTML = currentTemplate.html;
-            container.style.opacity = '1'; // 确保显示
+            container.style.opacity = '1';
 
-            await typeIn(container, currentTemplate.totalChars);
-            isTransitioning = false;
+            await typeIn(container, currentTemplate.totalChars, state);
+            if (!state.disposed) isTransitioning = false;
         }
 
-        // 启动逻辑
         if (phrases.length === 1) {
             showNext();
         } else {
             async function loop() {
-                // 1. 播放入场动画
+                if (state.disposed) return;
+
                 await showNext();
+                if (state.disposed) return;
 
-                // 2. 计算停留时间
-                let delay = isFixedTime ? minInterval : (minInterval + Math.random() * (maxInterval - minInterval + 1));
+                const delay = isFixedTime
+                    ? minInterval
+                    : (minInterval + Math.random() * (maxInterval - minInterval + 1));
 
-                // 3. 停留 -> 消散 -> 递归
-                setTimeout(async () => {
-                    await glitchOut(container);
-                    // 稍微留白后进入下一轮，避免闪烁
-                    setTimeout(loop, 400);
+                state.setTimeout(async () => {
+                    if (state.disposed) return;
+                    await glitchOut(container, state);
+                    if (state.disposed) return;
+                    state.setTimeout(loop, 400);
                 }, delay);
             }
             loop();
         }
     }
 
-    // 5. 观察器
+    function startTyperr(target) {
+        if (!target || target.dataset.typerrInitialized === 'true') return;
+        initTyperr(target);
+        target.dataset.typerrInitialized = 'true';
+    }
+
+    function startTyperrsIn(root) {
+        if (!root) return;
+        if (root.classList && root.classList.contains('typerr')) startTyperr(root);
+        if (root.querySelectorAll) {
+            root.querySelectorAll('.typerr').forEach(startTyperr);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const targets = document.querySelectorAll('.typerr');
+
+        // 翻页事件：transform 场景下保证进入屏内的 typerr 能启动
+        window.addEventListener('love4z:pagechange', (e) => {
+            const screen = e.detail && e.detail.screen;
+            startTyperrsIn(screen);
+        });
+
+        if (!('IntersectionObserver' in window)) {
+            targets.forEach(startTyperr);
+            return;
+        }
 
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    const target = entry.target;
-                    // 防止重复初始化
-                    if (!target.dataset.typerrInitialized) {
-                        initTyperr(target);
-                        target.dataset.typerrInitialized = 'true';
-                    }
-                    observer.unobserve(target);
+                    startTyperr(entry.target);
+                    observer.unobserve(entry.target);
                 }
             });
-        }, { threshold: 0.5 });
+        }, { threshold: 0.15 });
 
         targets.forEach(target => observer.observe(target));
+
+        // 首屏：若 load 前 DOM 已就绪，尝试启动首屏内实例
+        const firstScreen = document.querySelector('.screen');
+        startTyperrsIn(firstScreen);
     });
 })();
