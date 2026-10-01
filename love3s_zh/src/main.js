@@ -3,94 +3,37 @@ document.documentElement.classList.add("js");
 /* ============================================================
    Love4z — 主脚本
    四大模块：
-     0. FPS 帧率检测器
-     1. Matrix 数字雨生成器
+     1. Matrix 数字雨生成器（WebGPU）
      2. Ghost 幽灵错误消息
      3. 全屏翻页系统（滚轮 / 触摸 / 键盘）
      4. 打字机效果
    ============================================================ */
 
 /* ============================================================
-   模块 0 — FPS 帧率检测器
-   在页面左上角实时显示当前帧率，用于性能调试
-   ============================================================ */
-
-(function () {
-    "use strict";
-
-    // 调试面板仅通过 URL ?debug=1 开启，避免生产环境持续占用一条动画帧循环。
-    if (new URLSearchParams(window.location.search).get("debug") !== "1") return;
-
-    /* ---- 配置 ---- */
-    var FPS_MONITOR = {
-        updateInterval: 500,    // FPS 数值刷新间隔，避免数字闪烁太快
-        warnThreshold: 30       // 低于该帧率时数字变红警告
-    };
-
-    /* ---- 创建 DOM ---- */
-    var monitor = document.createElement("div");
-    monitor.style.cssText =
-        "position: fixed;" +
-        "top: 10px;" +
-        "left: 10px;" +
-        "padding: 4px 8px;" +
-        "background: rgba(0, 0, 0, 0.6);" +
-        "color: #0f0;" +
-        "font: bold 14px monospace;" +
-        "z-index: 99999;" +
-        "pointer-events: none;" +
-        "border-radius: 4px;";
-
-    document.documentElement.appendChild(monitor);
-
-    /* ---- 核心统计逻辑 ---- */
-    var frameCount = 0;
-    var lastTime = performance.now();
-    var currentFps = 0;
-
-    function tick(now) {
-        frameCount++;
-
-        var elapsed = now - lastTime;
-        if (elapsed >= FPS_MONITOR.updateInterval) {
-            currentFps = Math.round((frameCount * 1000) / elapsed);
-
-            frameCount = 0;
-            lastTime = now;
-
-            monitor.textContent = currentFps + " FPS";
-            monitor.style.color = currentFps < FPS_MONITOR.warnThreshold ? "#f00" : "#0f0";
-        }
-
-        window.requestAnimationFrame(tick);
-    }
-
-    window.requestAnimationFrame(tick);
-
-})();
-
-
-/* ============================================================
-   模块 1 — Matrix 数字雨生成器
-   在 #rain 容器中批量生成随机字符流，模拟 Matrix 代码雨
+   模块 1 — 黑客字符雨（WebGPU 实例化渲染）
+   1) 字符 Atlas：离屏 2D Canvas 画完整张字库，拷入显存
+   2) Instance Buffer：每字符 x / y / 字号 / 字符索引 / 速度
+   3) WGSL：顶点着色器把 4 顶点矩形摆到 NDC 并算出 Atlas UV，
+      片元着色器采样字符，全部字符只用一次 draw 提交
+   不支持 WebGPU（或窄屏 / 减少动效）时退化为 <span> + CSS 动画。
    ============================================================ */
 
 (function () {
     "use strict";
 
     /* ---- 1a. 配置 ---- */
-    var RAIN = {
-        container: document.getElementById("rain"),
-        chars: "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ013456789",
-        count: 100,
-        sizeMin: 20,
-        sizeMax: 40,
-        durMin: 2,
-        durMax: 5
-    };
+    var CHARS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ013456789";
+    var COUNT = 100;   // 同屏下落字符数（加大即可扩容，无需改渲染管线）
+    var CELL = 48;     // Atlas 单元格边长
+    var COLS = 16;     // Atlas 列数
+    var ROWS = Math.ceil(CHARS.length / COLS);
+    var STRIDE = 5;    // 每实例 5 个 float32：x, y, size, charIdx, speed
+    var MUTATE = 6;    // 每秒每字符随机换字的概率
 
-    // 与 CSS 移动端降级一致：窄屏不生成雨滴 DOM，避免无效节点开销。
-    if (!RAIN.container || window.matchMedia("(max-width: 799px)").matches) return;
+    var container = document.getElementById("rain");
+
+    // 与 CSS 降级一致：窄屏 / 减少动效不生成雨滴。
+    if (!container || window.matchMedia("(max-width: 799px), (prefers-reduced-motion: reduce)").matches) return;
 
     /**
      * 范围随机数生成
@@ -102,23 +45,282 @@ document.documentElement.classList.add("js");
         return Math.random() * (max - min) + min;
     }
 
-    /* ---- 1b. 批量构建 DOM ---- */
-    var fragment = document.createDocumentFragment();
+    /* ---- 1b. 降级：CSS 动画的 <span> 雨 ---- */
+    function startCssRain() {
+        var box = container;
 
-    for (var i = 0; i < RAIN.count; i++) {
-        var span = document.createElement("span");
+        if (box.tagName === "CANVAS") {
+            box = document.createElement("div");
+            box.className = "rain";
+            box.id = container.id;
+            container.parentNode.replaceChild(box, container);
+        }
 
-        span.textContent = RAIN.chars[rand(0, RAIN.chars.length) | 0];
+        var fragment = document.createDocumentFragment();
 
-        span.style.cssText =
-            "left: " + rand(0, 100) + "vw;" +
-            "font-size: " + rand(RAIN.sizeMin, RAIN.sizeMax) + "px;" +
-            "animation-duration: " + rand(RAIN.durMin, RAIN.durMax) + "s";
+        for (var i = 0; i < COUNT; i++) {
+            var span = document.createElement("span");
+            span.textContent = CHARS[(Math.random() * CHARS.length) | 0];
+            span.style.cssText =
+                "left: " + rand(0, 100) + "vw;" +
+                "font-size: " + rand(20, 40) + "px;" +
+                "animation-duration: " + rand(2, 5) + "s";
+            fragment.appendChild(span);
+        }
 
-        fragment.appendChild(span);
+        box.appendChild(fragment);
     }
 
-    RAIN.container.appendChild(fragment);
+    if (container.tagName !== "CANVAS" || !navigator.gpu) {
+        startCssRain();
+        return;
+    }
+
+    /* ---- 1c. WGSL 着色器 ---- */
+    var WGSL = `
+struct Uniforms {
+  screen: vec2<f32>,
+  cols: f32,
+  rows: f32,
+  dpr: f32,
+  _pad: f32,
+};
+
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@group(0) @binding(1) var charSampler: sampler;
+@group(0) @binding(2) var charAtlas: texture_2d<f32>;
+
+struct VertexInput {
+  @builtin(vertex_index) vertexIndex: u32,
+  @location(0) pos: vec2<f32>,
+  @location(1) size: f32,
+  @location(2) charIdx: f32,
+};
+
+struct VertexOutput {
+  @builtin(position) clip: vec4<f32>,
+  @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+  var quad = array<vec2<f32>, 4>(
+    vec2<f32>(0.0, 0.0),
+    vec2<f32>(1.0, 0.0),
+    vec2<f32>(0.0, 1.0),
+    vec2<f32>(1.0, 1.0)
+  );
+  let off = quad[input.vertexIndex % 4u];
+
+  // 屏幕像素坐标（CSS 像素 × dpr）转 NDC
+  let world = (input.pos + off * input.size) * u.dpr;
+
+  var output: VertexOutput;
+  output.clip = vec4<f32>(
+    world.x / u.screen.x * 2.0 - 1.0,
+    1.0 - world.y / u.screen.y * 2.0,
+    0.0,
+    1.0
+  );
+
+  // 由字符索引定位到 Atlas 中的单元格，再取矩形四角 UV
+  let idx = floor(input.charIdx + 0.5);
+  let row = floor(idx / u.cols);
+  let col = idx - row * u.cols;
+  output.uv = vec2<f32>((col + off.x) / u.cols, (row + off.y) / u.rows);
+  return output;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+  let tex = textureSample(charAtlas, charSampler, input.uv);
+  return vec4<f32>(tex.rgb, tex.a * 0.8);
+}
+`;
+
+    /* ---- 1d. CPU 侧实例数据 ---- */
+    var data = new Float32Array(COUNT * STRIDE);
+    var uniforms = new Float32Array(6); // [w, h, cols, rows, dpr, pad]
+
+    function resetInstance(i, initial) {
+        var o = i * STRIDE;
+        data[o] = Math.random() * window.innerWidth;
+        data[o + 1] = initial ? Math.random() * window.innerHeight : -CELL;
+        data[o + 2] = rand(24, 48);                      // 字符尺寸
+        data[o + 3] = (Math.random() * CHARS.length) | 0;
+        data[o + 4] = rand(150, 520);                    // 下落速度（像素 / 秒）
+    }
+
+    /* ---- 1e. 初始化 ---- */
+    start();
+
+    async function start() {
+        try {
+            var adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+            if (!adapter) { startCssRain(); return; }
+
+            boot(await adapter.requestDevice());
+        } catch (err) {
+            startCssRain();
+        }
+    }
+
+    function boot(device) {
+        var canvas = container;
+        var context = canvas.getContext("webgpu");
+        if (!context) { startCssRain(); return; }
+
+        context.configure({
+            device: device,
+            format: navigator.gpu.getPreferredCanvasFormat(),
+            alphaMode: "premultiplied"
+        });
+
+        /* 字符 Atlas：2D Canvas 上按网格逐字绘制 */
+        var atlas = document.createElement("canvas");
+        atlas.width = CELL * COLS;
+        atlas.height = CELL * ROWS;
+
+        var actx = atlas.getContext("2d");
+        actx.font = "bold 40px monospace";
+        actx.fillStyle = "#00ff66";
+        actx.textAlign = "center";
+        actx.textBaseline = "middle";
+
+        for (var i = 0; i < CHARS.length; i++) {
+            actx.fillText(CHARS[i], ((i % COLS) + 0.5) * CELL, (Math.floor(i / COLS) + 0.5) * CELL);
+        }
+
+        var atlasTexture = device.createTexture({
+            size: [atlas.width, atlas.height, 1],
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+        });
+
+        device.queue.copyExternalImageToTexture(
+            { source: atlas },
+            { texture: atlasTexture },
+            [atlas.width, atlas.height]
+        );
+
+        var sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
+
+        uniforms[2] = COLS;
+        uniforms[3] = ROWS;
+
+        var uniformBuffer = device.createBuffer({
+            size: uniforms.byteLength,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+        });
+
+        for (var j = 0; j < COUNT; j++) resetInstance(j, true);
+
+        var instanceBuffer = device.createBuffer({
+            size: data.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+        });
+
+        var module = device.createShaderModule({ code: WGSL });
+
+        var pipeline = device.createRenderPipeline({
+            layout: "auto",
+            vertex: {
+                module: module,
+                entryPoint: "vs_main",
+                buffers: [{
+                    arrayStride: STRIDE * 4,
+                    stepMode: "instance",
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: "float32x2" }, // x, y
+                        { shaderLocation: 1, offset: 8, format: "float32" },   // size
+                        { shaderLocation: 2, offset: 12, format: "float32" }   // charIdx
+                    ]
+                }]
+            },
+            fragment: {
+                module: module,
+                entryPoint: "fs_main",
+                targets: [{
+                    format: navigator.gpu.getPreferredCanvasFormat(),
+                    blend: {
+                        color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+                        alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" }
+                    }
+                }]
+            },
+            primitive: { topology: "triangle-strip" }
+        });
+
+        var bindGroup = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: sampler },
+                { binding: 2, resource: atlasTexture.createView() }
+            ]
+        });
+
+        function resize() {
+            var dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
+            canvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
+            uniforms[0] = canvas.width;
+            uniforms[1] = canvas.height;
+            uniforms[4] = dpr;
+            device.queue.writeBuffer(uniformBuffer, 0, uniforms);
+        }
+
+        resize();
+        window.addEventListener("resize", resize);
+
+        var alive = true;
+        device.lost.then(function () {
+            alive = false;
+            window.removeEventListener("resize", resize);
+            startCssRain();
+        });
+
+        var last = performance.now();
+
+        function frame(now) {
+            if (!alive) return;
+
+            var dt = Math.min((now - last) / 1000, 0.05);
+            last = now;
+
+            // 更新下落位置 / 随机换字，整块回写显存
+            var viewportHeight = window.innerHeight;
+
+            for (var k = 0; k < COUNT; k++) {
+                var o = k * STRIDE;
+                data[o + 1] += data[o + 4] * dt;
+                if (Math.random() < MUTATE * dt) data[o + 3] = (Math.random() * CHARS.length) | 0;
+                if (data[o + 1] > viewportHeight) resetInstance(k, false);
+            }
+            device.queue.writeBuffer(instanceBuffer, 0, data);
+
+            var encoder = device.createCommandEncoder();
+            var pass = encoder.beginRenderPass({
+                colorAttachments: [{
+                    view: context.getCurrentTexture().createView(),
+                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                    loadOp: "clear",
+                    storeOp: "store"
+                }]
+            });
+
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.setVertexBuffer(0, instanceBuffer);
+            pass.draw(4, COUNT, 0, 0); // 4 顶点 × COUNT 实例，一次 draw
+            pass.end();
+
+            device.queue.submit([encoder.finish()]);
+            requestAnimationFrame(frame);
+        }
+
+        requestAnimationFrame(frame);
+    }
 
 })();
 
@@ -322,10 +524,12 @@ document.documentElement.classList.add("js");
     };
 
     const ATTR = {
-        IDX: 'data-typerr-idx',
-        INTERVAL: 'data-interval',
-        RANDOM: 'data-random'
+        IDX: 'data-typerr-idx'
     };
+
+    // 当前可见的 screen（翻页时由 love4z:pagechange 更新）。
+    // 离屏的 typerr 只冻结状态、不写 DOM——否则每个已访问过的屏幕都在后台空转。
+    let activeScreen = document.querySelector('.screen');
 
     function prepareTemplate(phraseText) {
         const tempContainer = document.createElement('div');
@@ -412,6 +616,7 @@ document.documentElement.classList.add("js");
                     state.setTimeout(() => {
                         let step = 0;
                         const timer = state.setInterval(() => {
+                            if (state.screen && state.screen !== activeScreen) return; // 离屏暂停
                             step++;
                             if (step >= scrambleCount) {
                                 state.clearInterval(timer);
@@ -450,13 +655,25 @@ document.documentElement.classList.add("js");
                 scrambleEl: wrap.querySelector(`.${CLS.SCRAMBLE}`),
                 startAt: Math.random() * 1000
             }));
-            const startTime = performance.now();
+            let startTime = performance.now();
+            let pausedAt = 0;
             const charDuration = 250;
 
             function tick(now) {
                 if (state.disposed) {
                     resolve();
                     return;
+                }
+
+                if (state.screen && state.screen !== activeScreen) {
+                    // 离屏暂停：时间轴一起冻住，回来时从原处继续
+                    if (!pausedAt) pausedAt = now;
+                    state.requestFrame(tick);
+                    return;
+                }
+                if (pausedAt) {
+                    startTime += now - pausedAt;
+                    pausedAt = 0;
                 }
 
                 const elapsed = now - startTime;
@@ -516,31 +733,17 @@ document.documentElement.classList.add("js");
 
         container.innerHTML = '';
 
-        const rawInterval = container.getAttribute(ATTR.INTERVAL) || '2000 - 7000';
-        let minInterval = 4000;
-        let maxInterval = 4000;
-        let isFixedTime = true;
+        // 每句话停留（展示已揭示文本）的随机区间，毫秒
+        const DELAY_MIN = 2000;
+        const DELAY_MAX = 7000;
 
-        // 兼容中英文逗号与横杠分隔的区间写法
-        if (/[-–,，]/.test(rawInterval)) {
-            const parts = rawInterval.split(/[-–,，]/);
-            minInterval = Math.max(0, parseInt(parts[0], 10) || 2000);
-            maxInterval = Math.max(minInterval, parseInt(parts[1], 10) || 6000);
-            isFixedTime = false;
-        } else {
-            const val = parseInt(rawInterval, 10);
-            if (!isNaN(val)) {
-                minInterval = maxInterval = Math.max(0, val);
-            }
-        }
-
-        const isRandom = container.getAttribute(ATTR.RANDOM) === 'true';
         const templates = phrases.map(phrase => prepareTemplate(phrase));
 
         let currentIndex = -1;
         let isTransitioning = false;
         const state = {
             disposed: false,
+            screen: container.closest('.screen'),
             timers: new Set(),
             frames: new Set(),
             setTimeout(callback, delay) {
@@ -585,12 +788,6 @@ document.documentElement.classList.add("js");
         window.addEventListener('pagehide', () => state.dispose(), { once: true });
 
         function getNextIndex() {
-            if (phrases.length === 1) return 0;
-            if (isRandom) {
-                let idx;
-                do { idx = Math.floor(Math.random() * phrases.length); } while (idx === currentIndex && phrases.length > 1);
-                return idx;
-            }
             return (currentIndex + 1) % phrases.length;
         }
 
@@ -617,9 +814,7 @@ document.documentElement.classList.add("js");
                 await showNext();
                 if (state.disposed) return;
 
-                const delay = isFixedTime
-                    ? minInterval
-                    : (minInterval + Math.random() * (maxInterval - minInterval + 1));
+                const delay = DELAY_MIN + Math.random() * (DELAY_MAX - DELAY_MIN + 1);
 
                 state.setTimeout(async () => {
                     if (state.disposed) return;
@@ -652,6 +847,7 @@ document.documentElement.classList.add("js");
         // 翻页事件：transform 场景下保证进入屏内的 typerr 能启动
         window.addEventListener('love4z:pagechange', (e) => {
             const screen = e.detail && e.detail.screen;
+            activeScreen = screen || activeScreen;
             startTyperrsIn(screen);
         });
 

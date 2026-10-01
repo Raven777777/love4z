@@ -105,7 +105,6 @@ img {
 .screen {
     width: 100%;
     height: var(--page-height);
-    min-height: var(--page-height);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -119,7 +118,6 @@ img {
 .page-content {
     text-align: center;
     width: min(100%, 1100px);
-    max-width: 1100px;
     padding: 2rem;
     line-height: 1.8;
 }
@@ -135,10 +133,6 @@ img {
     text-shadow:
         0 0 10px #ff3333,
         0 0 20px #ff0000;
-}
-
-.page-content h2 {
-    font-size: 2.3rem;
 }
 
 .page-content p {
@@ -238,22 +232,7 @@ img {
     }
 }
 
-/* --- 5e. CRT 偶发闪烁 (crt-flicker) ---
-   99.5%-99.8% 瞬间降低 opacity 至 0.85，
-   模拟老式 CRT 显示器的随机亮度波动 */
-@keyframes crt-flicker {
-
-    0%,
-    99.4%,
-    100% {
-        opacity: 1;
-    }
-
-    99.5%,
-    99.8% {
-        opacity: 0.85;
-    }
-}
+/* --- 5e. （已移除）CRT 闪烁 crt-flicker：靠 body::after 的 backdrop-filter 才可见，随全屏模糊一起删 --- */
 
 /* --- 5f. 噪点抖动 (noiseMove) ---
    1-2px 的随机位移，让噪点纹理"活着" */
@@ -342,10 +321,7 @@ img {
    两层 linear-gradient 交叉形成 40×40 方格矩阵 */
 .grid {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background-image:
         linear-gradient(#8e47ff 3px, transparent 3px),
         linear-gradient(90deg, #9054b3 3px, transparent 3px);
@@ -356,7 +332,17 @@ img {
 }
 
 /* --- 6b. Matrix 数字雨 ---
-   每个 <span> 由 JS 动态生成，随机水平位置 + 大小 + 速度 */
+   WebGPU 模式：整屏 <canvas>，字符走实例化绘制；
+   不支持 WebGPU 时降级为 JS 生成的 <span> + CSS 动画 */
+.rain {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* 降级模式的雨滴：随机水平位置 + 大小 + 速度 */
 .rain span {
     position: absolute;
     top: -20px;
@@ -392,17 +378,8 @@ body::before {
             rgba(0, 0, 0, 0.06) 3px);
 }
 
-/* --- 6e. CRT 微模糊 + 闪烁（body::after）---
-   backdrop-filter blur 模拟荧光屏余晖，crt-flicker 模拟闪烁 */
-body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 98;
-    pointer-events: none;
-    backdrop-filter: blur(0.6px);
-    animation: crt-flicker 5s infinite;
-}
+/* --- 6e. （已移除）body::after 全屏 backdrop-filter blur ---
+   它会强制每帧对整屏 backdrop（含 WebGPU canvas）重做一次模糊采样，是全页最贵的合成步骤。 */
 
 
 /* ============================================================
@@ -518,7 +495,6 @@ body::after {
    JS 控制 top/left 位置和文本切换，CSS transition 实现淡入淡出。 */
 #ghost {
     position: fixed;
-    inset: auto;
     font-family: monospace;
     color: #ff4444;
     font-size: 2.2rem;
@@ -571,10 +547,6 @@ body::after {
         font-size: clamp(1.8rem, 8vw, 3.2rem);
     }
 
-    .page-content h2 {
-        font-size: clamp(1.4rem, 6vw, 2.3rem);
-    }
-
     .page-content p {
         font-size: 1rem;
     }
@@ -596,11 +568,6 @@ body::after {
 
     body::before {
         background: none;
-    }
-
-    body::after {
-        backdrop-filter: none;
-        animation: none;
     }
 
     #ghost {
