@@ -101,6 +101,13 @@ img {
     will-change: transform;
 }
 
+/* JS 翻页时固定舞台，避免 Tab 聚焦远处链接时浏览器滚动整个文档。 */
+html.js #pages {
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
 /* 每一“页” = 一个全屏 flex 居中容器 */
 .screen {
     width: 100%;
