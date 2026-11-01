@@ -2,60 +2,21 @@
 
 > **PLZ HUG ME HARD**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+A static personal site with 12 full-screen sections, keyboard/touch/wheel navigation, a relationship clock, and decorative rain and text effects. No backend, data storage, or production build.
 
-一个静态的交互式个人网页，无需构建步骤或第三方依赖。
+## Navigation & Accessibility
 
-### 技术栈
+- Scroll, swipe, or use Arrow Up/Down, Page Up/Down, and Space/Shift+Space.
+- Continuous wheel events and held navigation keys keep paging; there is no cooldown or one-page-per-gesture limit.
+- Long sections scroll within the page before moving to the next section.
+- Tab reveals the section containing the focused link. Paging moves focus with it.
+- Without JavaScript, all sections remain in normal document flow.
+- Reduced motion uses static headings, a plain hobby list, text clock digits, and no decorative rain or ghost messages. Turning it on stops active text effects; reload after turning it off to restart them.
 
-- HTML5
-- CSS3
-- JavaScript
-- WebGPU（支持时用于数字雨效果，不支持时降级为 CSS 动画）
-- WOFF2
+## Clock
 
-### 项目结构
+The clock start time is set by `data-start` on `#love-clock` in `index.html`, including its explicit time-zone offset. Times before that date show zero elapsed time.
 
-```
-love4z/
-├── index.html           # 主页面
-├── src/
-│   ├── main.css         # 样式表
-│   ├── main.js          # 主脚本
-│   ├── font/
-│   │   └── FOTMatisProB.woff2
-│   └── img/
-│       ├── asaka.webp
-│       ├── hmzz.webp
-│       ├── wuyanss.webp
-│       └── wyyyy.webp
-├── minify_web.py        # 可选的 HTML/CSS/JS 压缩脚本（Python 标准库）
-├── .gitignore
-├── LICENSE
-└── README.md
-```
+## License
 
-### 运行
-
-将项目目录部署到任意静态文件服务器即可。也可以在项目目录运行：
-
-```sh
-python -m http.server 8000
-```
-
-然后访问 <http://localhost:8000>。
-
-### 翻页交互设计
-
-- 页面通过 `#pages` 的 `transform` 配合 CSS transition 翻页。
-- 滚轮事件不做节流或防抖：滚动事件按 `deltaY` 方向逐次翻页，连续输入可以连续翻页；这是为了保持翻页响应直接、流畅。
-- 方向键、PageUp、PageDown 和空格键由页面接管，用于上下翻页；Tab 保留浏览器原生焦点导航行为。
-- 启用 JS 翻页时，翻页舞台固定在视口中，避免浏览器为了聚焦远处链接而滚动整个文档，干扰当前页面位置。
-
-## 📜 许可
-
-本项目基于 [MIT 许可证](LICENSE) 开源。
-
----
-
-*Empty world just fuck we all.*
+[MIT](LICENSE)

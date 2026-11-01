@@ -111,10 +111,17 @@ html.js #pages {
 /* 每一“页” = 一个全屏 flex 居中容器 */
 .screen {
     width: 100%;
-    height: var(--page-height);
+    min-height: var(--page-height);
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: safe center;
+}
+
+html.js .screen {
+    height: var(--page-height);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
 }
 
 
@@ -318,6 +325,22 @@ html.js #pages {
     animation: rubberBand 1s ease-in-out;
 }
 
+/* --- 5j. 计时器换字弹跳 (digit-pop) ---
+   数字变化的瞬间像素小人轻轻顶一下，模拟翻牌手感 */
+@keyframes digit-pop {
+    0% {
+        transform: translateY(0) scale(1);
+    }
+
+    35% {
+        transform: translateY(-6px) scale(1.08);
+    }
+
+    100% {
+        transform: translateY(0) scale(1);
+    }
+}
+
 
 /* ============================================================
    6. 视觉特效层（从底层到顶层排列）
@@ -395,14 +418,19 @@ body::before {
 
 /* --- 7a. S2 爱情宣言页 — 双轨环字 + 心跳 --- */
 
-/* 为 ::before / ::after 伪元素提供定位参考 */
-.screen-love .page-content {
+.screen-love {
     position: relative;
 }
 
-.screen-love {
-    position: relative;
+/* Clip decoration separately so its orbit never creates a content scrollbar. */
+.love-orbits {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     overflow: hidden;
+    pointer-events: none;
 }
 
 /* 心跳标题：四层 text-shadow 叠加产生炽热发光，配合 heartbeat 缩放 */
@@ -416,7 +444,7 @@ body::before {
 }
 
 /* 外轨（大半径 320px）："郑舒桐是我老婆" 循环 */
-.screen-love::before {
+.love-orbits::before {
     content: "❤ 郑舒桐 ❤ 是我老婆 ❤ 郑舒桐 ❤ 是我老婆 ❤";
     position: absolute;
     white-space: nowrap;
@@ -429,7 +457,7 @@ body::before {
 }
 
 /* 内轨（大半径 380px，反向）："三三水最可爱" 循环 */
-.screen-love::after {
+.love-orbits::after {
     content: "❤ 三三水 ❤ 最可爱 ❤ 三三水 ❤ 最可爱 ❤";
     position: absolute;
     white-space: nowrap;
@@ -481,6 +509,66 @@ body::before {
     z-index: 10;
 }
 
+/* --- 7c. S4 恋爱计时器 — rule34 数字小人 ---
+   每个数字位是一个空 <span>，背景图指向 src/rule34/<数字>.gif。
+   高度用 clamp 随视口缩放，宽高比锁死 45:100，换图不会撑动布局。 */
+
+.love-clock {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.4rem 1.1rem;
+    margin: 1.2rem auto 0.4rem;
+}
+
+/* 一组 = 若干数字位 + 单位标签 */
+.clock-unit {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.35rem;
+}
+
+.clock-digits {
+    display: flex;
+    gap: 0.15em;
+}
+
+.clock-digit {
+    display: block;
+    height: clamp(58px, 12vh, 108px);
+    aspect-ratio: 45 / 100;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    /* 像素画放大保持硬边，不插值糊成一片 */
+    image-rendering: pixelated;
+    /* 与 h1 同款的红色霓虹光晕 */
+    filter: drop-shadow(0 0 8px rgba(255, 40, 60, 0.45));
+}
+
+/* 仅由 JS 在数字真的变化时添加 */
+.clock-digit.is-changed {
+    animation: digit-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.clock-unit-label {
+    padding-bottom: 0.2em;
+    font-size: 1rem;
+    letter-spacing: 0.12em;
+    color: hsl(345, 85%, 62%);
+    text-shadow: 0 0 10px hsl(345, 85%, 62%);
+}
+
+/* 起始时间说明：比正文小一号并弱化，不抢计时器的视觉重心 */
+.page-content .love-clock-since {
+    margin-top: 0.2rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    color: rgba(238, 238, 238, 0.55);
+}
+
+
 /* 词云轨道关键帧：与 orbit-a/orbit-b 原理相同，但参数由 CSS 变量动态控制 */
 @keyframes orbit-word {
     0% {
@@ -527,6 +615,20 @@ body::before {
     opacity: 0.7;
     text-shadow: 0 0 5px #0f0;
     z-index: 10;
+}
+
+/* --- 8c. 读屏专用文本 ---
+   计时器的数字是图片，读屏只能靠这段隐藏文字拿到完整读数 */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
 }
 
 
@@ -587,6 +689,24 @@ body::before {
         font-size: 0.75rem;
     }
 
+    /* 窄屏：数字小人整体缩小，读数尽量挤在一行内 */
+    .clock-digit {
+        height: clamp(42px, 12.5vw, 72px);
+    }
+
+    .love-clock {
+        gap: 0.3rem 0.45rem;
+    }
+
+    .clock-unit {
+        gap: 0.2rem;
+    }
+
+    .clock-unit-label {
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+    }
+
 }
 
 /* ============================================================
@@ -641,6 +761,40 @@ body::before {
     #noise,
     #scroll-indicator {
         animation: none !important;
+    }
+
+    .rain,
+    #ghost {
+        display: none;
+    }
+
+    .word-cloud {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1rem;
+        height: auto;
+        margin: 1.5rem auto;
+        transform: none;
+    }
+
+    .word-cloud span {
+        position: static;
+        animation: none;
+        transform: none;
+        filter: none;
+    }
+
+    .clock-digit {
+        height: auto;
+        aspect-ratio: auto;
+        background-image: none !important;
+        filter: none;
+        font: 2.5rem monospace;
+    }
+
+    .clock-digit::before {
+        content: attr(data-digit);
     }
 
     .typerr .char-wrap .scramble {

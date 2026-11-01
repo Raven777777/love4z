@@ -1,5 +1,3 @@
-document.documentElement.classList.add("js");
-
 /* ============================================================
    Love4z — 主脚本
    四大模块：
@@ -33,7 +31,8 @@ document.documentElement.classList.add("js");
     var container = document.getElementById("rain");
 
     // 与 CSS 降级一致：窄屏 / 减少动效不生成雨滴。
-    if (!container || window.matchMedia("(max-width: 799px), (prefers-reduced-motion: reduce)").matches) return;
+    var rainQuery = window.matchMedia("(max-width: 799px), (prefers-reduced-motion: reduce)");
+    if (!container || rainQuery.matches) return;
 
     /**
      * 范围随机数生成
@@ -56,6 +55,8 @@ document.documentElement.classList.add("js");
             container.parentNode.replaceChild(box, container);
         }
 
+        box.setAttribute("aria-hidden", "true");
+        container = box;
         var fragment = document.createDocumentFragment();
 
         for (var i = 0; i < COUNT; i++) {
@@ -68,7 +69,7 @@ document.documentElement.classList.add("js");
             fragment.appendChild(span);
         }
 
-        box.appendChild(fragment);
+        box.replaceChildren(fragment);
     }
 
     if (container.tagName !== "CANVAS" || !navigator.gpu) {
@@ -159,7 +160,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             var adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
             if (!adapter) { startCssRain(); return; }
 
-            boot(await adapter.requestDevice());
+            var device = await adapter.requestDevice();
+            if (rainQuery.matches) { device.destroy(); return; }
+            boot(device);
         } catch (err) {
             startCssRain();
         }
@@ -274,16 +277,28 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         window.addEventListener("resize", resize);
 
         var alive = true;
+        var frameId = 0;
+        var last = performance.now();
+
+        function updateRain() {
+            cancelAnimationFrame(frameId);
+            frameId = 0;
+            if (alive && !rainQuery.matches) {
+                last = performance.now();
+                frameId = requestAnimationFrame(frame);
+            }
+        }
+        rainQuery.addEventListener("change", updateRain);
         device.lost.then(function () {
             alive = false;
+            cancelAnimationFrame(frameId);
             window.removeEventListener("resize", resize);
+            rainQuery.removeEventListener("change", updateRain);
             startCssRain();
         });
 
-        var last = performance.now();
-
         function frame(now) {
-            if (!alive) return;
+            if (!alive || rainQuery.matches) return;
 
             var dt = Math.min((now - last) / 1000, 0.05);
             last = now;
@@ -316,10 +331,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             pass.end();
 
             device.queue.submit([encoder.finish()]);
-            requestAnimationFrame(frame);
+            frameId = requestAnimationFrame(frame);
         }
 
-        requestAnimationFrame(frame);
+        updateRain();
     }
 
 })();
@@ -392,10 +407,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     updateGhost();
     var ghostInterval = setInterval(updateGhost, GHOST.interval);
-    window.addEventListener("pagehide", function () {
+    window.addEventListener("pagehide", function (event) {
+        if (event.persisted) return;
         clearInterval(ghostInterval);
         if (fadeTimer) clearTimeout(fadeTimer);
-    }, { once: true });
+    });
 
 })();
 
@@ -420,6 +436,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     if (!wrapper || total === 0) return;
 
+    document.documentElement.classList.add("js");
+    for (var i = 0; i < total; i++) pages[i].tabIndex = -1;
+
     /* ---- 3b. 动画工具函数 ---- */
 
     /**
@@ -433,7 +452,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         void el.offsetWidth;
         el.classList.add("rubberBand");
 
-        el.addEventListener("animationend", function handler() {
+        el.addEventListener("animationend", function handler(e) {
+            // animationend 会冒泡：只认自己身上那个 rubberBand，
+            // 否则页内元素（如计时器数字的 digit-pop）结束时会把弹性动画提前收掉
+            if (e.target !== el || e.animationName !== "rubberBand") return;
+
             el.classList.remove("rubberBand");
             el.removeEventListener("animationend", handler);
         });
@@ -454,6 +477,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             page = target;
             // 与 CSS 的 --page-height 保持一致，避免移动端地址栏变化造成错位。
             wrapper.style.transform = "translateY(calc(-" + page + " * var(--page-height)))";
+            if (!screen.contains(document.activeElement)) screen.focus({ preventScroll: true });
             playRubberBand(screen);
         }
 
@@ -463,41 +487,69 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }));
     }
 
+    function canScroll(delta) {
+        var screen = pages[page];
+        return delta > 0
+            ? screen.scrollTop + screen.clientHeight < screen.scrollHeight - 1
+            : screen.scrollTop > 1;
+    }
+
+    // 设计上允许滚轮连续事件和键盘长按连续翻页，不加冷却或合并手势，以保持流畅。
     function requestPage(delta) {
         goPage(page + delta);
     }
 
     /* ---- 3d. 输入事件绑定 ---- */
 
-    window.addEventListener("wheel", function (e) {
-        requestPage(e.deltaY > 0 ? 1 : -1);
-    }, { passive: true });
+    wrapper.addEventListener("focusin", function (e) {
+        var screen = e.target.closest(".screen");
+        if (screen && screen !== pages[page]) goPage(Array.from(pages).indexOf(screen));
+    });
 
-    var touchStartY = 0;
+    window.addEventListener("wheel", function (e) {
+        if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        var delta = e.deltaY > 0 ? 1 : -1;
+        if (canScroll(delta)) return;
+        e.preventDefault();
+        requestPage(delta);
+    }, { passive: false });
+
+    var touchStartY = null;
+    var touchStartScroll = 0;
 
     window.addEventListener("touchstart", function (e) {
-        var t = e.touches && e.touches[0];
-        if (!t) return;
-        touchStartY = t.clientY;
+        touchStartY = e.touches.length === 1 ? e.touches[0].clientY : null;
+        touchStartScroll = pages[page].scrollTop;
+    }, { passive: true });
+
+    window.addEventListener("touchcancel", function () {
+        touchStartY = null;
     }, { passive: true });
 
     window.addEventListener("touchend", function (e) {
         var t = e.changedTouches && e.changedTouches[0];
-        if (!t) return;
+        if (!t || touchStartY === null) return;
 
-        var deltaY = t.clientY - touchStartY;
-        if (Math.abs(deltaY) < 50) return;
+        var deltaY = touchStartY - t.clientY;
+        touchStartY = null;
+        if (Math.abs(deltaY) < 50 || canScroll(deltaY) || pages[page].scrollTop !== touchStartScroll) return;
 
-        requestPage(deltaY < 0 ? 1 : -1);
+        requestPage(deltaY > 0 ? 1 : -1);
     }, { passive: true });
 
     window.addEventListener("keydown", function (e) {
-        if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === " ") {
-            e.preventDefault();
-            requestPage(1);
-        } else if (e.key === "ArrowUp" || e.key === "PageUp") {
-            e.preventDefault();
-            requestPage(-1);
+        if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey ||
+            (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]"))) return;
+        if (e.key === " " && e.target instanceof Element && e.target.closest("button")) return;
+        var delta = 0;
+        if (e.key === "ArrowDown" || e.key === "PageDown" || (e.key === " " && !e.shiftKey)) delta = 1;
+        if (e.key === "ArrowUp" || e.key === "PageUp" || (e.key === " " && e.shiftKey)) delta = -1;
+        if (!delta) return;
+        e.preventDefault();
+        if (canScroll(delta)) {
+            pages[page].scrollBy(0, delta * (e.key.startsWith("Arrow") ? 40 : pages[page].clientHeight));
+        } else {
+            requestPage(delta);
         }
     });
 
@@ -567,6 +619,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
                     const scrambleSpan = document.createElement('span');
                     scrambleSpan.className = CLS.SCRAMBLE;
+                    scrambleSpan.setAttribute('aria-hidden', 'true');
                     scrambleSpan.setAttribute(ATTR.IDX, idx);
                     scrambleSpan.textContent = SCRAMBLE_CHARS[0];
 
@@ -585,7 +638,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         return new Promise(resolve => {
             if (totalChars === 0) { resolve(); return; }
 
-            const promises = [];
             const finalEls = [];
             const scrambleEls = [];
             container.querySelectorAll(`.${CLS.FINAL}`).forEach(el => {
@@ -602,35 +654,35 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 return;
             }
 
-            for (let i = 0; i < totalChars; i++) {
-                promises.push(new Promise(res => {
-                    const finalEl = finalEls[i];
-                    const scrambleEl = scrambleEls[i];
+            const timelines = finalEls.map((finalEl, i) => ({
+                finalEl,
+                scrambleEl: scrambleEls[i],
+                startAt: Math.random() * 4000,
+                steps: 2 + Math.floor(Math.random() * 8),
+                interval: 40 + Math.random() * 40,
+                lastStep: 0
+            }));
+            const startTime = state.now();
 
-                    if (!finalEl || !scrambleEl) { res(); return; }
-
-                    const startDelay = Math.random() * 4000;
-                    const scrambleCount = 2 + Math.floor(Math.random() * 8);
-                    const scrambleInterval = 40 + Math.random() * 40;
-
-                    state.setTimeout(() => {
-                        let step = 0;
-                        const timer = state.setInterval(() => {
-                            if (state.screen && state.screen !== activeScreen) return; // 离屏暂停
-                            step++;
-                            if (step >= scrambleCount) {
-                                state.clearInterval(timer);
-                                scrambleEl.style.display = 'none';
-                                finalEl.classList.add(CLS.REVEALED);
-                                res();
-                            } else {
-                                scrambleEl.textContent = SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
-                            }
-                        }, scrambleInterval);
-                    }, startDelay);
-                }));
+            function tick(now) {
+                let allDone = true;
+                timelines.forEach(item => {
+                    if (!item.finalEl || !item.scrambleEl) return;
+                    const step = Math.max(0, Math.floor((now - startTime - item.startAt) / item.interval));
+                    if (step < item.steps) allDone = false;
+                    if (step === item.lastStep || item.lastStep >= item.steps) return;
+                    item.lastStep = step;
+                    if (step >= item.steps) {
+                        item.scrambleEl.style.display = 'none';
+                        item.finalEl.classList.add(CLS.REVEALED);
+                    } else {
+                        item.scrambleEl.textContent = SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+                    }
+                });
+                if (allDone) resolve();
+                else state.requestFrame(tick);
             }
-            Promise.all(promises).then(resolve);
+            state.requestFrame(tick);
         });
     }
 
@@ -655,25 +707,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 scrambleEl: wrap.querySelector(`.${CLS.SCRAMBLE}`),
                 startAt: Math.random() * 1000
             }));
-            let startTime = performance.now();
-            let pausedAt = 0;
+            const startTime = state.now();
             const charDuration = 250;
 
             function tick(now) {
                 if (state.disposed) {
                     resolve();
                     return;
-                }
-
-                if (state.screen && state.screen !== activeScreen) {
-                    // 离屏暂停：时间轴一起冻住，回来时从原处继续
-                    if (!pausedAt) pausedAt = now;
-                    state.requestFrame(tick);
-                    return;
-                }
-                if (pausedAt) {
-                    startTime += now - pausedAt;
-                    pausedAt = 0;
                 }
 
                 const elapsed = now - startTime;
@@ -731,6 +771,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         if (phrases.length === 0) return;
 
+        const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+        if (motionQuery.matches) {
+            container.innerHTML = phrases[0];
+            return;
+        }
+
         container.innerHTML = '';
 
         // 每句话停留（展示已揭示文本）的随机区间，毫秒
@@ -745,7 +791,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             disposed: false,
             screen: container.closest('.screen'),
             timers: new Set(),
-            frames: new Set(),
+            frameId: 0,
+            frameCallback: null,
+            pausedAt: null,
+            pausedDuration: 0,
+            now() {
+                return (this.pausedAt === null ? performance.now() : this.pausedAt) - this.pausedDuration;
+            },
             setTimeout(callback, delay) {
                 const id = window.setTimeout(() => {
                     this.timers.delete(id);
@@ -754,38 +806,50 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 this.timers.add(id);
                 return id;
             },
-            setInterval(callback, delay) {
-                const id = window.setInterval(() => {
-                    if (!this.disposed) callback();
-                }, delay);
-                this.timers.add(id);
-                return id;
-            },
-            clearInterval(id) {
-                window.clearInterval(id);
-                this.timers.delete(id);
-            },
             requestFrame(callback) {
-                const id = window.requestAnimationFrame(now => {
-                    this.frames.delete(id);
-                    if (!this.disposed) callback(now);
+                this.frameCallback = callback;
+                if (this.disposed || this.pausedAt !== null) return;
+                this.frameId = window.requestAnimationFrame(() => {
+                    this.frameId = 0;
+                    this.frameCallback = null;
+                    if (!this.disposed) callback(this.now());
                 });
-                this.frames.add(id);
-                return id;
             },
             dispose() {
                 this.disposed = true;
-                this.timers.forEach(id => {
-                    window.clearTimeout(id);
-                    window.clearInterval(id);
-                });
-                this.frames.forEach(id => window.cancelAnimationFrame(id));
+                this.timers.forEach(id => window.clearTimeout(id));
+                window.cancelAnimationFrame(this.frameId);
                 this.timers.clear();
-                this.frames.clear();
+                this.frameCallback = null;
+                window.removeEventListener('love4z:pagechange', syncVisibility);
             }
         };
 
-        window.addEventListener('pagehide', () => state.dispose(), { once: true });
+        function syncVisibility() {
+            if (state.screen && state.screen !== activeScreen) {
+                if (state.pausedAt === null) state.pausedAt = performance.now();
+                window.cancelAnimationFrame(state.frameId);
+                state.frameId = 0;
+            } else {
+                if (state.pausedAt !== null) {
+                    state.pausedDuration += performance.now() - state.pausedAt;
+                    state.pausedAt = null;
+                }
+                if (state.frameCallback && !state.frameId) state.requestFrame(state.frameCallback);
+            }
+        }
+        window.addEventListener('love4z:pagechange', syncVisibility);
+        syncVisibility();
+
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) state.dispose();
+        });
+        motionQuery.addEventListener('change', event => {
+            if (!event.matches) return;
+            state.dispose();
+            container.innerHTML = phrases[0];
+            container.style.opacity = '1';
+        }, { once: true });
 
         function getNextIndex() {
             return (currentIndex + 1) % phrases.length;
@@ -871,4 +935,178 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         const firstScreen = document.querySelector('.screen');
         startTyperrsIn(firstScreen);
     });
+})();
+
+
+/* ============================================================
+   模块 5 — 相恋计时器（S4）
+   把 <elapsed time 2026 1 月 16 日 21:04:32> 换成一块会走的表：
+     * 起点读 #love-clock 的 data-start（2026-01-16T21:04:32+08:00）
+     * 显示天 / 时 / 分 / 秒，每位数字是 src/rule34/<数字>.gif 的像素小人
+     * 只有数字真的变了才换图：没变的那几位 GIF 继续播放，不会每秒重头开始
+     * rAF 每帧比对"总秒数"，按 Date.now() 重算，长时间挂着也不会累积漂移；
+       标签页切到后台时 rAF 自动停摆，回来当帧追平
+   ============================================================ */
+
+(function () {
+    "use strict";
+
+    var root = document.getElementById("love-clock");
+    if (!root) return;
+
+    var start = new Date(root.getAttribute("data-start") || "");
+    if (isNaN(start.getTime())) return;
+
+    var START_MS = start.getTime();
+    var DIR = "src/rule34/";
+
+    // 单位表：min = 初始数字位数，pad = 补零宽度（0 表示不补零）
+    var UNITS = [
+        { key: "day", label: "天", min: 1, pad: 0 },
+        { key: "hour", label: "时", min: 2, pad: 2 },
+        { key: "minute", label: "分", min: 2, pad: 2 },
+        { key: "second", label: "秒", min: 2, pad: 2 }
+    ];
+
+    /* ---- 5a. 预热 10 张数字 GIF，首次换字不闪白 ---- */
+    // 数组只为保住引用，别让图片对象被 GC 掉
+    var preload = [];
+    for (var i = 0; i < 10; i++) {
+        var img = new Image();
+        img.src = DIR + i + ".gif";
+        preload.push(img);
+    }
+
+    /* ---- 5b. 搭骨架：数字位 + 单位标签 + 读屏文本 ---- */
+    var slots = {};
+
+    /**
+     * 造一个数字位
+     * @param {HTMLElement} row 所属的 .clock-digits
+     * @returns {HTMLElement} 空 <span>，等 write() 挂背景图
+     */
+    function makeDigit(row) {
+        var digit = document.createElement("span");
+        digit.className = "clock-digit";
+        row.appendChild(digit);
+        return digit;
+    }
+
+    UNITS.forEach(function (unit) {
+        var box = document.createElement("div");
+        box.className = "clock-unit";
+
+        var row = document.createElement("div");
+        row.className = "clock-digits";
+        row.setAttribute("aria-hidden", "true");
+
+        var digits = [];
+        for (var n = 0; n < unit.min; n++) digits.push(makeDigit(row));
+
+        var label = document.createElement("span");
+        label.className = "clock-unit-label";
+        label.textContent = unit.label;
+
+        box.appendChild(row);
+        box.appendChild(label);
+        root.appendChild(box);
+
+        slots[unit.key] = { row: row, digits: digits, text: "" };
+    });
+
+    var readout = document.createElement("span");
+    readout.className = "visually-hidden";
+    root.appendChild(readout);
+
+    /* ---- 5c. 渲染：只改真正变化的那几位 ---- */
+
+    /**
+     * 数字换图时播放翻牌弹跳
+     * @param {HTMLElement} el 数字位
+     */
+    function pop(el) {
+        el.classList.remove("is-changed");
+        void el.offsetWidth;
+        el.classList.add("is-changed");
+    }
+
+    /**
+     * 写入某个单位的读数，按位比较，未变的位不动（GIF 动画因此不中断）
+     * @param {string} key 单位 key（day / hour / minute / second）
+     * @param {string} text 已格式化的数字串
+     */
+    function write(key, text) {
+        var slot = slots[key];
+
+        // 位数变化（例如第 1000 天）时补位或收位
+        while (slot.digits.length < text.length) slot.digits.push(makeDigit(slot.row));
+        while (slot.digits.length > text.length) slot.row.removeChild(slot.digits.pop());
+
+        for (var n = 0; n < text.length; n++) {
+            var ch = text.charAt(n);
+            if (slot.text.charAt(n) === ch) continue;
+
+            slot.digits[n].setAttribute("data-digit", ch);
+            slot.digits[n].style.backgroundImage = 'url("' + DIR + ch + '.gif")';
+            pop(slot.digits[n]);
+        }
+
+        slot.text = text;
+    }
+
+    /**
+     * 左侧补零
+     * @param {number} value 数值
+     * @param {number} width 目标宽度，0 表示不补
+     * @returns {string} 数字串
+     */
+    function pad(value, width) {
+        var text = String(value);
+        while (text.length < width) text = "0" + text;
+        return text;
+    }
+
+    /**
+     * 把"在一起的总秒数"拆成天 / 时 / 分 / 秒并写入 DOM
+     * @param {number} totalSeconds 自起点的总秒数（负数按 0 处理）
+     */
+    function render(totalSeconds) {
+        var total = Math.max(0, Math.floor(totalSeconds));
+
+        var values = {
+            day: Math.floor(total / 86400),
+            hour: Math.floor(total / 3600) % 24,
+            minute: Math.floor(total / 60) % 60,
+            second: total % 60
+        };
+
+        UNITS.forEach(function (unit) {
+            write(unit.key, pad(values[unit.key], unit.pad));
+        });
+
+        readout.textContent =
+            values.day + " 天 " + values.hour + " 时 " + values.minute + " 分 " + values.second + " 秒";
+    }
+
+    /* ---- 5d. 走表：每帧比对总秒数，变了才重绘 ---- */
+    var lastTotal = -1;
+    var frameId = 0;
+
+    function frame() {
+        frameId = requestAnimationFrame(frame);
+
+        var total = Math.floor((Date.now() - START_MS) / 1000);
+        if (total === lastTotal) return;
+
+        lastTotal = total;
+        render(total);
+    }
+
+    frame();
+
+    window.addEventListener("pagehide", function (event) {
+        if (event.persisted) return;
+        cancelAnimationFrame(frameId);
+    });
+
 })();
