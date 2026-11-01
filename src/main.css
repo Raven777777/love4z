@@ -353,8 +353,8 @@ html.js .screen {
     position: fixed;
     inset: 0;
     background-image:
-        linear-gradient(#8e47ff 3px, transparent 3px),
-        linear-gradient(90deg, #9054b3 3px, transparent 3px);
+        linear-gradient(#412174 3px, transparent 3px),
+        linear-gradient(90deg, #321841 3px, transparent 3px);
     background-size: 40px 40px;
     animation: drift 15s linear infinite;
     opacity: 0.15;
