@@ -536,7 +536,7 @@ body::before {
 
 .clock-digit {
     display: block;
-    height: clamp(58px, 12vh, 108px);
+    height: clamp(77px, 14vh, 133px);
     aspect-ratio: 45 / 100;
     background-repeat: no-repeat;
     background-position: center;
@@ -691,20 +691,20 @@ body::before {
 
     /* 窄屏：数字小人整体缩小，读数尽量挤在一行内 */
     .clock-digit {
-        height: clamp(42px, 12.5vw, 72px);
+        height: clamp(56px, 16vw, 96px);
     }
 
     .love-clock {
-        gap: 0.3rem 0.45rem;
+        gap: 0.45rem 0.7rem;
     }
 
     .clock-unit {
-        gap: 0.2rem;
+        gap: 0.3rem;
     }
 
     .clock-unit-label {
-        font-size: 0.8rem;
-        letter-spacing: 0.04em;
+        font-size: 0.95rem;
+        letter-spacing: 0.05em;
     }
 
 }
