@@ -326,18 +326,21 @@ html.js .screen {
 }
 
 /* --- 5j. 计时器换字弹跳 (digit-pop) ---
-   数字变化的瞬间像素小人轻轻顶一下，模拟翻牌手感 */
+   数字变化的瞬间像素小人轻轻顶一下，模拟翻牌手感。
+   用 top 而不是 transform：transform 动画会被合成器整层位图重采样，
+   像素画在动画期间发糊、结束瞬间又被重新栅格化变清晰，视觉上会跳一下。
+   top 每帧重绘，硬边始终一致。 */
 @keyframes digit-pop {
     0% {
-        transform: translateY(0) scale(1);
+        top: 0;
     }
 
     35% {
-        transform: translateY(-6px) scale(1.08);
+        top: -6px;
     }
 
     100% {
-        transform: translateY(0) scale(1);
+        top: 0;
     }
 }
 
@@ -353,8 +356,8 @@ html.js .screen {
     position: fixed;
     inset: 0;
     background-image:
-        linear-gradient(#412174 3px, transparent 3px),
-        linear-gradient(90deg, #321841 3px, transparent 3px);
+        linear-gradient(#8e47ff 3px, transparent 3px),
+        linear-gradient(90deg, #9054b3 3px, transparent 3px);
     background-size: 40px 40px;
     animation: drift 15s linear infinite;
     opacity: 0.15;
@@ -536,7 +539,8 @@ body::before {
 
 .clock-digit {
     display: block;
-    height: clamp(77px, 14vh, 133px);
+    /* 宽屏基准尺寸（窄屏由下方 800px 断点覆盖） */
+    height: clamp(87px, 18vh, 162px);
     aspect-ratio: 45 / 100;
     background-repeat: no-repeat;
     background-position: center;
@@ -545,6 +549,8 @@ body::before {
     image-rendering: pixelated;
     /* 与 h1 同款的红色霓虹光晕 */
     filter: drop-shadow(0 0 8px rgba(255, 40, 60, 0.45));
+    /* digit-pop 用 top 位移，需要可定位；不影响同级布局 */
+    position: relative;
 }
 
 /* 仅由 JS 在数字真的变化时添加 */
@@ -554,7 +560,7 @@ body::before {
 
 .clock-unit-label {
     padding-bottom: 0.2em;
-    font-size: 1rem;
+    font-size: 1.5rem;
     letter-spacing: 0.12em;
     color: hsl(345, 85%, 62%);
     text-shadow: 0 0 10px hsl(345, 85%, 62%);
@@ -691,20 +697,20 @@ body::before {
 
     /* 窄屏：数字小人整体缩小，读数尽量挤在一行内 */
     .clock-digit {
-        height: clamp(56px, 16vw, 96px);
+        height: clamp(42px, 12.5vw, 72px);
     }
 
     .love-clock {
-        gap: 0.45rem 0.7rem;
+        gap: 0.3rem 0.45rem;
     }
 
     .clock-unit {
-        gap: 0.3rem;
+        gap: 0.2rem;
     }
 
     .clock-unit-label {
-        font-size: 0.95rem;
-        letter-spacing: 0.05em;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
     }
 
 }

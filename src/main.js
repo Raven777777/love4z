@@ -1,10 +1,11 @@
 /* ============================================================
    Love4z — 主脚本
-   四大模块：
+   五大模块：
      1. Matrix 数字雨生成器（WebGPU）
      2. Ghost 幽灵错误消息
      3. 全屏翻页系统（滚轮 / 触摸 / 键盘）
      4. 打字机效果
+     5. 相恋计时器
    ============================================================ */
 
 /* ============================================================
@@ -393,9 +394,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         lastIndex = newIndex;
         el.textContent = msgs[newIndex];
 
+        var top = GHOST.posMin + Math.random() * (GHOST.posMax - GHOST.posMin);
+        var left = GHOST.posMin + Math.random() * (GHOST.posMax - GHOST.posMin);
+        // 文字框最宽 min(90vw, 700px)（见 CSS #ghost），钳在屏内，不伸出右下角
         el.style.cssText =
-            "top: " + (GHOST.posMin + Math.random() * (GHOST.posMax - GHOST.posMin)) + "%;" +
-            "left: " + (GHOST.posMin + Math.random() * (GHOST.posMax - GHOST.posMin)) + "%;" +
+            "top: min(" + top + "%, calc(100vh - 8rem));" +
+            "left: min(" + left + "%, calc(100vw - min(90vw, 700px)));" +
             "opacity: 1";
 
         if (fadeTimer) clearTimeout(fadeTimer);
@@ -566,6 +570,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
    神秘乱码打字机（修复完美版 v2.0）
    ============================================================ */
 (function () {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const SCRAMBLE_CHARS = ' █▓▒░╫╪╗╝╚╔║═╬▀■□◇◆▽⊿⟐⟡⧫⬡⬢⏣'.split('');
 
     const CLS = {
@@ -647,7 +652,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 scrambleEls[Number(el.getAttribute(ATTR.IDX))] = el;
             });
 
-            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            if (motionQuery.matches) {
                 finalEls.forEach(el => el && el.classList.add(CLS.REVEALED));
                 scrambleEls.forEach(el => el && (el.style.display = 'none'));
                 resolve();
@@ -688,7 +693,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     function glitchOut(container, state) {
         return new Promise(resolve => {
-            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            if (motionQuery.matches) {
                 container.style.opacity = '0';
                 resolve();
                 return;
@@ -771,7 +776,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         if (phrases.length === 0) return;
 
-        const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
         if (motionQuery.matches) {
             container.innerHTML = phrases[0];
             return;
