@@ -262,16 +262,17 @@ test('clock handles day/hour/minute rollover, future dates and expanding day dig
     const page = await open(t, { reducedMotion: 'reduce' });
     const readout = page.locator('#love-clock .visually-hidden');
     assert.equal(await readout.textContent(), '1 天 3 时 3 分 4 秒');
-    await page.clock.setSystemTime(new Date('2026-01-18T21:04:31+08:00'));
-    await page.clock.runFor(20);
+    // 时钟每秒整点醒来，所以改系统时间后等 1 秒再读
+    await page.clock.setSystemTime(new Date('2026-01-18T21:04:30+08:00'));
+    await page.clock.runFor(1000);
     assert.equal(await readout.textContent(), '1 天 23 时 59 分 59 秒');
     await page.clock.runFor(1000);
     assert.equal(await readout.textContent(), '2 天 0 时 0 分 0 秒');
     await page.clock.setSystemTime(new Date('2026-01-01T00:00:00+08:00'));
-    await page.clock.runFor(20);
+    await page.clock.runFor(1000);
     assert.equal(await readout.textContent(), '0 天 0 时 0 分 0 秒');
-    await page.clock.setSystemTime(new Date(new Date('2026-01-16T21:04:32+08:00').getTime() + 1000 * 86400000));
-    await page.clock.runFor(20);
+    await page.clock.setSystemTime(new Date(new Date('2026-01-16T21:04:32+08:00').getTime() + 1000 * 86400000 - 1000));
+    await page.clock.runFor(1000);
     assert.equal(await readout.textContent(), '1000 天 0 时 0 分 0 秒');
     assert.equal(await page.locator('.clock-digits').first().locator('.clock-digit').count(), 4);
 });

@@ -948,8 +948,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
      * 起点读 #love-clock 的 data-start（2026-01-16T21:04:32+08:00）
      * 显示天 / 时 / 分 / 秒，每位数字是 src/rule34/<数字>.gif 的像素小人
      * 只有数字真的变了才换图：没变的那几位 GIF 继续播放，不会每秒重头开始
-     * rAF 每帧比对"总秒数"，按 Date.now() 重算，长时间挂着也不会累积漂移；
-       标签页切到后台时 rAF 自动停摆，回来当帧追平
+     * 定时器每秒整点比对"总秒数"，按 Date.now() 重算，长时间挂着也不会累积漂移；
+       标签页切到后台时定时器被浏览器降频，回来当帧追平
    ============================================================ */
 
 (function () {
@@ -1092,25 +1092,26 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             values.day + " 天 " + values.hour + " 时 " + values.minute + " 分 " + values.second + " 秒";
     }
 
-    /* ---- 5d. 走表：每帧比对总秒数，变了才重绘 ---- */
+    /* ---- 5d. 走表：每秒整点醒来一次，比对总秒数，变了才重绘 ---- */
     var lastTotal = -1;
-    var frameId = 0;
+    var timerId = 0;
 
     function frame() {
-        frameId = requestAnimationFrame(frame);
-
-        var total = Math.floor((Date.now() - START_MS) / 1000);
-        if (total === lastTotal) return;
-
-        lastTotal = total;
-        render(total);
+        var elapsed = Date.now() - START_MS;
+        var total = Math.floor(elapsed / 1000);
+        if (total !== lastTotal) {
+            lastTotal = total;
+            render(total);
+        }
+        // 睡到下一个整秒；浏览器早醒时下一轮会补上，不会漏秒
+        timerId = setTimeout(frame, 1000 - (elapsed % 1000));
     }
 
     frame();
 
     window.addEventListener("pagehide", function (event) {
         if (event.persisted) return;
-        cancelAnimationFrame(frameId);
+        clearTimeout(timerId);
     });
 
 })();

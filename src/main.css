@@ -439,10 +439,10 @@ body::before {
 /* 心跳标题：四层 text-shadow 叠加产生炽热发光，配合 heartbeat 缩放 */
 .screen-love h1 {
     text-shadow:
-        0 0 10px hsl(345, 85%, 62%),
-        0 0 30px hsl(345, 85%, 62%),
-        0 0 60px hsl(355, 75%, 50%),
-        0 0 80px hsl(355, 75%, 50%);
+        0 0 10px hsla(345, 85%, 62%, 0.5),
+        0 0 20px hsla(345, 85%, 62%, 0.5),
+        0 0 30px hsla(355, 75%, 50%, 0.5),
+        0 0 40px hsla(355, 75%, 50%, 0.5);
     animation: heartbeat 1.2s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
 }
 
@@ -498,8 +498,7 @@ body::before {
     animation: orbit-word var(--speed, 15s) linear infinite;
     animation-delay: calc(var(--orbit, 0) * -1.8s);
 
-    /* 远景虚化：轨道编号越大，越模糊、越透明 */
-    filter: blur(calc(var(--orbit, 0) * 0.08px));
+    /* 远景变淡：轨道编号越大，越透明 */
     opacity: calc(0.95 - var(--orbit, 0) * 0.025);
 
     transition: color var(--dur-fast), text-shadow var(--dur-fast);
@@ -523,6 +522,8 @@ body::before {
     justify-content: center;
     gap: 0.4rem 1.1rem;
     margin: 1.2rem auto 0.4rem;
+    /* 与 h1 同款的红色霓虹光晕，整组只加一层 */
+    filter: drop-shadow(0 0 8px rgba(255, 40, 60, 0.45));
 }
 
 /* 一组 = 若干数字位 + 单位标签 */
@@ -547,8 +548,6 @@ body::before {
     background-size: contain;
     /* 像素画放大保持硬边，不插值糊成一片 */
     image-rendering: pixelated;
-    /* 与 h1 同款的红色霓虹光晕 */
-    filter: drop-shadow(0 0 8px rgba(255, 40, 60, 0.45));
     /* digit-pop 用 top 位移，需要可定位；不影响同级布局 */
     position: relative;
 }
@@ -788,6 +787,9 @@ body::before {
         position: static;
         animation: none;
         transform: none;
+    }
+
+    .love-clock {
         filter: none;
     }
 
@@ -795,7 +797,6 @@ body::before {
         height: auto;
         aspect-ratio: auto;
         background-image: none !important;
-        filter: none;
         font: 2.5rem monospace;
     }
 
