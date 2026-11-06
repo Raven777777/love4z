@@ -61,16 +61,6 @@ html.js body {
    2. 排版基础
    ============================================================ */
 
-/* 所有标题继承正文字体，保持风格统一 */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-    font-family: inherit;
-}
-
 /* <em> 用作粉色高亮强调 */
 em {
     color: #ff9999;
@@ -723,6 +713,12 @@ body::before {
     display: inline-block;
     opacity: 1;
     transition: opacity 0.15s ease;
+}
+
+/* 无 JS（或脚本还没跑）时只显示第一句；其余句子由打字机从 DOM 里读，
+   不需要同时显示成一大块。 */
+.typerr [data-phrase] + [data-phrase] {
+    display: none;
 }
 
 /* 保证动画期间字符可以重叠定位 */

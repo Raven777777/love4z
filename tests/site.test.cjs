@@ -117,7 +117,8 @@ test('Tab reveals an offscreen link and keyboard paging moves focus to the visib
     await page.keyboard.press('Tab');
     assert.equal(await link.evaluate(el => el === document.activeElement), true);
     assert.equal(await current(page), 10);
-    await page.clock.runFor(900);
+    // 假时钟不会推进 CSS 过渡，这里要等真实时间让 translateY 走完
+    await page.waitForTimeout(900);
     assert.ok(await link.evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
     await page.keyboard.press('PageDown');
     assert.equal(await current(page), 11);
@@ -294,9 +295,20 @@ test('clock touches only the digits that changed, so unchanged GIFs keep playing
     assert.ok(await page.evaluate(() => window.changedAttrs.ones.length) > 0, 'changed ones digit is updated');
 });
 
+test('rain starts when the window widens past the narrow breakpoint', async t => {
+    const page = await open(t, { viewport: { width: 700, height: 800 } });
+    assert.equal(await page.locator('#rain span').count(), 0);
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#rain span').count(), 100);
+});
+
 test('without JavaScript, short sections grow and never overlap or clip content', async t => {
     const page = await open(t, { javaScriptEnabled: false, viewport: { width: 320, height: 568 }, reducedMotion: 'reduce' });
     await page.locator('img').evaluateAll(els => Promise.all(els.map(el => el.decode())));
     assert.ok(await page.locator('.screen').evaluateAll(els => els.every(el => el.clientHeight >= el.querySelector('.page-content').offsetHeight)));
     assert.ok(await page.locator('.screen').evaluateAll(els => els.every((el, i) => !i || el.getBoundingClientRect().top >= els[i - 1].getBoundingClientRect().bottom - 1)));
+    // 无 JS 时不要把所有 data-phrase 一起显示，计时器也不能是一片空白
+    assert.equal(await page.locator('h1').first().evaluate(el => el.innerText.trim()), '? Empty World Just Fuck We All ?');
+    assert.match(await page.locator('#love-clock').evaluate(el => el.innerText), /JavaScript/);
 });

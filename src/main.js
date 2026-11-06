@@ -33,7 +33,7 @@
 
     // 与 CSS 降级一致：窄屏 / 减少动效不生成雨滴。
     var rainQuery = window.matchMedia("(max-width: 799px), (prefers-reduced-motion: reduce)");
-    if (!container || rainQuery.matches) return;
+    if (!container) return;
 
     /**
      * 范围随机数生成
@@ -73,10 +73,19 @@
         box.replaceChildren(fragment);
     }
 
-    if (container.tagName !== "CANVAS" || !navigator.gpu) {
-        startCssRain();
-        return;
+    // 只在允许时启动一次。媒体查询恢复（宽屏 / 关闭减少动效）后补启动，
+    // 不要在这里提前 return，否则先在窄屏打开再拉宽，雨就永远不出现。
+    var rainStarted = false;
+
+    function startRain() {
+        if (rainStarted || rainQuery.matches) return;
+        rainStarted = true;
+        if (container.tagName !== "CANVAS" || !navigator.gpu) startCssRain();
+        else start();
     }
+
+    rainQuery.addEventListener("change", startRain);
+    startRain();
 
     /* ---- 1c. WGSL 着色器 ---- */
     var WGSL = `
@@ -153,16 +162,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         data[o + 4] = rand(150, 520);                    // 下落速度（像素 / 秒）
     }
 
-    /* ---- 1e. 初始化 ---- */
-    start();
-
+    /* ---- 1e. 初始化（入口是上面的 startRain） ---- */
     async function start() {
         try {
             var adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
             if (!adapter) { startCssRain(); return; }
 
             var device = await adapter.requestDevice();
-            if (rainQuery.matches) { device.destroy(); return; }
+            if (rainQuery.matches) { rainStarted = false; device.destroy(); return; }
             boot(device);
         } catch (err) {
             startCssRain();
@@ -652,13 +659,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 scrambleEls[Number(el.getAttribute(ATTR.IDX))] = el;
             });
 
-            if (motionQuery.matches) {
-                finalEls.forEach(el => el && el.classList.add(CLS.REVEALED));
-                scrambleEls.forEach(el => el && (el.style.display = 'none'));
-                resolve();
-                return;
-            }
-
             const timelines = finalEls.map((finalEl, i) => ({
                 finalEl,
                 scrambleEl: scrambleEls[i],
@@ -764,17 +764,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     function initTyperr(container) {
-        const itemElements = Array.from(container.querySelectorAll('[data-phrase]'));
-        let phrases = [];
-
-        if (itemElements.length > 0) {
-            phrases = itemElements.map(el => el.innerHTML.trim());
-        } else {
-            const rawText = container.innerHTML.trim();
-            phrases = rawText.split('&&').map(p => p.trim()).filter(p => p.length > 0);
-        }
-
-        if (phrases.length === 0) return;
+        // 每句一个 [data-phrase]；没有就保持原样，当作普通静态文本。
+        const phrases = Array.from(container.querySelectorAll('[data-phrase]'))
+            .map(el => el.innerHTML.trim());
 
         if (motionQuery.matches) {
             container.innerHTML = phrases[0];

@@ -17,6 +17,11 @@
   python minify_web.py <目录> --out DIR            # 镜像结构输出到 DIR
   python minify_web.py <目录> --dry-run            # 只统计不写文件
   python minify_web.py <目录> --verify             # 压缩后二次解析校验
+  python minify_web.py --self-test                 # 运行内置自检
+
+注意: JS 里换行可能是语句结束(ASI)。`return` / `throw` / `break` /
+`continue` / `yield` 之后的换行,以及行首的 `++` / `--`,压缩时都会原样保留,
+否则压缩后的代码和原代码行为不一致。改完本文件请跑一次 `--self-test`。
 """
 import argparse
 import os
@@ -134,7 +139,7 @@ def minify_css(css):
     return out.strip()
 
 
-def _verify_css(orig, mini):
+def _verify_css(mini):
     if mini.count('{') != mini.count('}'):
         return False, '花括号不平衡'
     if minify_css(mini) != mini:
@@ -203,26 +208,34 @@ def _js_tokenize(src):
     prev = None
     last_close_ctx = None
     stack = []
+    newline = False  # 本记号前是否有换行(注释里的换行也算,ASI 认它)
 
     def finish(kind, text, i_new, close_ctx=None):
-        nonlocal prev, last_close_ctx
-        tokens.append((kind, text))
+        nonlocal prev, last_close_ctx, newline
+        tokens.append((kind, text, newline))
         prev = (kind, text)
         last_close_ctx = close_ctx
+        newline = False
         return i_new
 
     while i < n:
         c = src[i]
-        if c in ' \t\r\n\f\v':
+        if c in ' \t\r\n\f\v\u2028\u2029':
+            if c in '\r\n\u2028\u2029':
+                newline = True
             i += 1
             continue
         if c == '/' and src[i:i + 2] == '//':
             j = src.find('\n', i)
             i = n if j == -1 else j + 1
+            newline = True
             continue
         if c == '/' and src[i:i + 2] == '/*':
             j = src.find('*/', i + 2)
-            i = n if j == -1 else j + 2
+            end = n if j == -1 else j + 2
+            if '\n' in src[i:end] or '\r' in src[i:end]:
+                newline = True
+            i = end
             continue
         if c in '"\'':
             j = i + 1
@@ -330,30 +343,49 @@ def _need_space(t1, t2):
     return a1 + b1 in _MERGE_OPS
 
 
+# 换行在它后面代表语句结束(受限产生式),删了会改变语义
+_ASI_KEYWORDS = frozenset(('return', 'throw', 'break', 'continue', 'yield'))
+
+
+def _needs_newline(prev, cur):
+    """换行会被 ASI 当成语句结束的地方,保留原来的换行。"""
+    if prev is None or not cur[2]:
+        return False
+    if cur[1] == '}':
+        return False  # `}` 本身就能结束语句,不需要换行
+    if prev[0] == 'word' and prev[1] in _ASI_KEYWORDS:
+        return True
+    return cur[1][:2] in ('++', '--') or prev[1] in ('++', '--')
+
+
 def _drop_semicolons(tokens):
     n = len(tokens)
     out = []
-    for idx, (kind, text) in enumerate(tokens):
-        if kind == 'op' and text == ';':
+    for idx, tok in enumerate(tokens):
+        if tok[0] == 'op' and tok[1] == ';':
             j = idx
             while j < n and tokens[j][0] == 'op' and tokens[j][1] == ';':
                 j += 1
             if j >= n or (tokens[j][0] == 'op' and tokens[j][1] == '}'):
                 continue
-        out.append((kind, text))
+        out.append(tok)
     return out
 
 
 def _reemit(tokens):
     parts = []
     prev = None
-    for kind, text in tokens:
-        if prev is not None and _need_space(prev, (kind, text)):
-            parts.append(' ')
+    for kind, text, nl in tokens:
         if kind == 'num' and re.match(r'0\.\d', text):
             text = text[1:]
+        cur = (kind, text, nl)
+        if prev is not None:
+            if _needs_newline(prev, cur):
+                parts.append('\n')
+            elif _need_space(prev, cur):
+                parts.append(' ')
         parts.append(text)
-        prev = (kind, text)
+        prev = cur
     return ''.join(parts)
 
 
@@ -364,7 +396,7 @@ def minify_js(js):
 
 def _js_signature(src):
     out = []
-    for kind, text in _drop_semicolons(_js_tokenize(src)):
+    for kind, text, _nl in _drop_semicolons(_js_tokenize(src)):
         if kind == 'num' and re.match(r'0\.\d', text):
             text = text[1:]
         out.append((kind, text))
@@ -553,7 +585,7 @@ def _minify_text(text, ext, minify_inline):
 
 def _verify(text, mini, ext):
     if ext == '.css':
-        return _verify_css(text, mini)
+        return _verify_css(mini)
     if ext == '.js':
         return _verify_js(text, mini)
     return _verify_html(text, mini)
@@ -582,15 +614,63 @@ def _target_path(src, root, args):
     return os.path.join(base + '_min', rel)
 
 
+# ---------------------------------------------------------------------------
+# 自检
+# ---------------------------------------------------------------------------
+
+_JS_CASES = (
+    # 换行落在 ASI 生效的地方: 必须原样保留,否则语义会变
+    ('function f(){return\n1}', 'function f(){return\n1}'),
+    ('function f(){return/*\n*/1}', 'function f(){return\n1}'),
+    ('function f(){break\nlabel}', 'function f(){break\nlabel}'),
+    ('var a=1,b=2;\na\n++b\n', 'var a=1,b=2;a\n++b'),
+    ('a\n--b', 'a\n--b'),
+    ('x++\ny', 'x++\ny'),
+    # 和 ASI 无关的换行照常折叠
+    ('var a = 1\nvar b = 2', 'var a=1 var b=2'),
+    ('const a = [1,\n2]', 'const a=[1,2]'),
+    ('function f(){a();\n}', 'function f(){a()}'),
+    ('const t = `${a}`;', 'const t=`${a}`'),
+)
+
+
+def _run_self_tests():
+    bad = 0
+    for src, want in _JS_CASES:
+        got = minify_js(src)
+        if got != want:
+            bad += 1
+            print('FAIL js %r -> %r (应为 %r)' % (src, got, want))
+    checks = (
+        (minify_css('a { color : red ; }'), 'a{color:red}'),
+        (minify_css('a{width:calc(100% + 1px)}'), 'a{width:calc(100% + 1px)}'),
+        (minify_css('a{background:url("x y.png")}'), 'a{background:url("x y.png")}'),
+        (minify_html('<p>a</p>\n<p>b</p>'), '<p>a</p><p>b</p>'),
+        (minify_html('<pre>a  b</pre>'), '<pre>a  b</pre>'),
+    )
+    for got, want in checks:
+        if got != want:
+            bad += 1
+            print('FAIL %r (应为 %r)' % (got, want))
+    print('自检 %s' % ('通过' if bad == 0 else '%d 项失败' % bad))
+    return bad == 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='CSS/JS/HTML 极限压缩(纯标准库)')
-    ap.add_argument('paths', nargs='+', help='文件或目录')
+    ap.add_argument('paths', nargs='*', help='文件或目录')
     ap.add_argument('--in-place', action='store_true', help='直接覆盖原文件')
     ap.add_argument('--out', metavar='DIR', help='输出到 DIR(镜像目录结构)')
     ap.add_argument('--dry-run', action='store_true', help='只统计不写入')
     ap.add_argument('--verify', action='store_true', help='压缩后二次解析校验')
+    ap.add_argument('--self-test', action='store_true', help='运行内置自检')
     ap.add_argument('--minify-inline', action='store_true', help='同时压缩 <style>/<script> 内联内容')
     args = ap.parse_args(argv)
+
+    if args.self_test:
+        return 0 if _run_self_tests() else 1
+    if not args.paths:
+        ap.error('需要至少一个文件或目录,或使用 --self-test')
 
     rows = []
     total_o = total_n = 0

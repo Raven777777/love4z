@@ -38,3 +38,22 @@ Tests open the local HTML in Chromium. They cover navigation, scrolling, focus,
 reduced motion, clock boundaries, preserved-page lifecycle events, and mocked
 WebGPU pause/device-loss behavior. They do not validate real GPU hardware,
 actual Back/Forward cache eligibility, or screen-reader speech output.
+
+## Minifier (optional)
+
+`minify_web.py` is a standalone CSS/JS/HTML minifier written with the standard
+library only. The site does not need it and does not build with it; it is for
+hand-minifying files before copying them somewhere.
+
+```sh
+python minify_web.py . --dry-run --verify   # report sizes and check the result
+python minify_web.py . --out dist_min       # write to another directory
+python minify_web.py --self-test            # built-in checks, exit 1 on failure
+```
+
+JavaScript can end a statement at a line break (automatic semicolon insertion),
+so the minifier keeps the line breaks that matter: after `return`, `throw`,
+`break`, `continue` and `yield`, and before a line that starts with `++` or
+`--`. `--verify` only compares tokens, so it cannot see every such mistake —
+run `--self-test` after changing the script, and run the site's tests after
+minifying `src/main.js` by hand.
