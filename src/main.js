@@ -26,8 +26,9 @@
     var CELL = 48;     // Atlas 单元格边长
     var COLS = 16;     // Atlas 列数
     var ROWS = Math.ceil(CHARS.length / COLS);
-    var STRIDE = 5;    // 每实例 5 个 float32：x, y, size, charIdx, speed
-    var MUTATE = 6;    // 每秒每字符随机换字的概率
+    var STRIDE = 8;    // 每实例 8 个 float32：x, y, size, charIdx, speed, vy, bounces, vx
+    var GRAVITY = 1500;    // 弹起段的重力加速度（像素/秒²），只作用于弹跳弧线
+    var MAX_BOUNCE = 1;    // 每滴雨只弹跳一次，之后落到底部穿过消失
 
     var container = document.getElementById("rain");
 
@@ -160,6 +161,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         data[o + 2] = rand(24, 48);                      // 字符尺寸
         data[o + 3] = (Math.random() * CHARS.length) | 0;
         data[o + 4] = rand(150, 520);                    // 下落速度（像素 / 秒）
+        data[o + 5] = data[o + 4];                       // 垂直速度（弹跳时改变）
+        data[o + 6] = 0;                                 // 已弹跳次数
+        data[o + 7] = 0;                                 // 水平速度，只在弹跳时赋予
     }
 
     /* ---- 1e. 初始化（入口是上面的 startRain） ---- */
@@ -311,14 +315,30 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             var dt = Math.min((now - last) / 1000, 0.05);
             last = now;
 
-            // 更新下落位置 / 随机换字，整块回写显存
+            // 更新下落 / 弹跳物理，整块回写显存
             var viewportHeight = window.innerHeight;
 
             for (var k = 0; k < COUNT; k++) {
                 var o = k * STRIDE;
-                data[o + 1] += data[o + 4] * dt;
-                if (Math.random() < MUTATE * dt) data[o + 3] = (Math.random() * CHARS.length) | 0;
-                if (data[o + 1] > viewportHeight) resetInstance(k, false);
+                var vy = data[o + 5] + GRAVITY * dt;
+                if (vy > data[o + 4]) vy = data[o + 4]; // 自由下落有末端速度，正常下落观感不变
+                data[o + 5] = vy;
+                data[o + 1] += vy * dt;
+                data[o] += data[o + 7] * dt;             // 弹跳弧线的水平漂移（下落段 vx=0）
+
+                // 地面在字符底边：pos+size == 屏幕底，触地时整个字符可见
+                var floor = viewportHeight - data[o + 2];
+                if (data[o + 1] > floor && data[o + 6] < MAX_BOUNCE) {
+                    // 触地弹起，方向从竖直偏转±30°随机；弹完配额后直接穿地消失
+                    var ang = rand(-30, 30) * Math.PI / 180;
+                    var v = data[o + 4] * rand(0.45, 1);
+                    data[o + 1] = floor;
+                    data[o + 5] = -v * Math.cos(ang);
+                    data[o + 7] = v * Math.sin(ang);
+                    data[o + 6] += 1;
+                } else if (data[o + 1] > viewportHeight) {
+                    resetInstance(k, false);             // 顶边越过屏幕底 = 完全离屏
+                }
             }
             device.queue.writeBuffer(instanceBuffer, 0, data);
 
