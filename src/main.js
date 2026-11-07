@@ -22,12 +22,12 @@
 
     /* ---- 1a. 配置 ---- */
     var CHARS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ013456789";
-    var COUNT = 100;   // 同屏下落字符数（加大即可扩容，无需改渲染管线）
+    var COUNT = 99;   // 同屏下落字符数（加大即可扩容，无需改渲染管线）
     var CELL = 48;     // Atlas 单元格边长
-    var COLS = 16;     // Atlas 列数
+    var COLS = 17;     // Atlas 列数
     var ROWS = Math.ceil(CHARS.length / COLS);
     var STRIDE = 8;    // 每实例 8 个 float32：x, y, size, charIdx, speed, vy, bounces, vx
-    var GRAVITY = 1500;    // 弹起段的重力加速度（像素/秒²），只作用于弹跳弧线
+    var GRAVITY = 999;    // 弹起段的重力加速度（像素/秒²），只作用于弹跳弧线
     var MAX_BOUNCE = 1;    // 每滴雨只弹跳一次，之后落到底部穿过消失
 
     var container = document.getElementById("rain");
@@ -158,12 +158,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         var o = i * STRIDE;
         data[o] = Math.random() * window.innerWidth;
         data[o + 1] = initial ? Math.random() * window.innerHeight : -CELL;
-        data[o + 2] = rand(24, 48);                      // 字符尺寸
+        data[o + 2] = rand(24, 48);                     // 字符尺寸
         data[o + 3] = (Math.random() * CHARS.length) | 0;
-        data[o + 4] = rand(150, 520);                    // 下落速度（像素 / 秒）
-        data[o + 5] = data[o + 4];                       // 垂直速度（弹跳时改变）
-        data[o + 6] = 0;                                 // 已弹跳次数
-        data[o + 7] = 0;                                 // 水平速度，只在弹跳时赋予
+        data[o + 4] = rand(100, 400);                    // 下落速度（像素 / 秒）
+        data[o + 5] = 0;                                // 垂直速度（弹跳时改变）
+        data[o + 6] = 0;                                // 已弹跳次数
+        data[o + 7] = 0;                                // 水平速度，只在弹跳时赋予
     }
 
     /* ---- 1e. 初始化（入口是上面的 startRain） ---- */
